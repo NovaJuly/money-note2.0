@@ -1,51 +1,6 @@
 <template>
   <el-card shadow="never" class="list-card full-screen-card">
     <div class="list-container">
-      <!-- 粘性头部：Teleport 到 MainLayout 的 header 中 -->
-      <teleport to="#header-portal" v-if="showStickyHeader">
-        <div class="global-sticky-header">
-          <div class="header-left" @click="triggerStickyMonthPicker">
-            <el-date-picker
-              ref="stickyMonthPickerRef"
-              v-model="selectedMonth"
-              type="month"
-              format="YYYY年MM月"
-              value-format="YYYY-MM"
-              :clearable="false"
-              class="month-picker-compact"
-              placeholder="选择月份"
-              @change="handleMonthChange"
-            />
-            <el-icon class="arrow-icon-mini"><ArrowDown /></el-icon>
-          </div>
-
-          <el-button
-            size="small"
-            round
-            class="back-today-sticky-btn"
-            @click.stop="backToToday"
-          >
-            回到今天
-          </el-button>
-
-          <div class="header-right">
-            <div class="stat-mini">
-              <span class="label">支出</span>
-              <span class="val"
-                >¥{{ selectedMonthStats.expense.toFixed(2) }}</span
-              >
-            </div>
-            <div class="stat-mini">
-              <span class="label">收入</span>
-              <span class="val income"
-                >¥{{ selectedMonthStats.income.toFixed(2) }}</span
-              >
-            </div>
-          </div>
-        </div>
-      </teleport>
-
-      <!--  v-infinite-scroll 有问题,要改成el-scrollbar,后面再改 -->
       <el-scrollbar
         class="list-content"
         @end-reached="loadMore"
@@ -141,8 +96,8 @@
                     <span class="record-time">{{
                       formatDate(record.date)
                     }}</span>
-                    <span v-if="record.note" class="record-note-text"
-                      > ● {{ record.note }}</span
+                    <span v-if="record.note" class="record-note-text">
+                      ● {{ record.note }}</span
                     >
                   </div>
                 </div>
@@ -242,6 +197,53 @@
         <el-button type="primary" @click="handleSaveEdit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 浮动面板 -->
+    <teleport to="body">
+      <div class="floating-panel">
+        <div class="panel-inner">
+          <div class="panel-item" @click="triggerStickyMonthPicker">
+            <el-date-picker
+              ref="stickyMonthPickerRef"
+              v-model="selectedMonth"
+              type="month"
+              format="YYYY年MM月"
+              value-format="YYYY-MM"
+              :clearable="false"
+              :teleported="false"
+              class="month-picker-compact"
+              placeholder="选择月份"
+              @change="handleMonthChange"
+            />
+            <el-icon class="arrow-icon-mini"><ArrowDown /></el-icon>
+          </div>
+
+          <el-button
+            size="small"
+            round
+            class="back-today-sticky-btn"
+            @click.stop="backToToday"
+          >
+            回到今天
+          </el-button>
+
+          <div class="stat-row">
+            <div class="stat-mini">
+              <span class="label">支出</span>
+              <span class="val"
+                >¥{{ selectedMonthStats.expense.toFixed(2) }}</span
+              >
+            </div>
+            <div class="stat-mini">
+              <span class="label">收入</span>
+              <span class="val income"
+                >¥{{ selectedMonthStats.income.toFixed(2) }}</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </el-card>
 </template>
 
@@ -251,12 +253,7 @@ import { useRecordsStore, type BillRecord } from "@/stores/records";
 import { ElMessage, ElMessageBox } from "element-plus";
 import dayjs from "dayjs";
 import { extractPlainText } from "@/utils/markdown";
-import {
-  Edit,
-  Delete,
-  ArrowDown,
-  Loading,
-} from "@element-plus/icons-vue";
+import { Edit, Delete, ArrowDown, Loading } from "@element-plus/icons-vue";
 import RecordEditDialog from "@/components/RecordEditDialog.vue";
 
 const recordsStore = useRecordsStore();
@@ -442,7 +439,7 @@ const disabled = computed(() => loading.value || noMore.value);
  */
 const isScrollDisabled = ref(false);
 const loadMore = () => {
-  if (isScrollDisabled.value ||loading.value||noMore.value) return;
+  if (isScrollDisabled.value || loading.value || noMore.value) return;
   isScrollDisabled.value = true;
   setTimeout(() => {
     visibleDays.value += PAGE_SIZE;
@@ -469,8 +466,9 @@ const formatMonthLabel = (monthStr: string) => {
 const formatDate = (dateStr: string) => {
   const today = dayjs().format("YYYY-MM-DD");
   const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
-  if (dateStr === today) return dayjs(dateStr).format('M月D日') + " " + "今天";
-  if (dateStr === yesterday) return dayjs(dateStr).format('M月D日') + " " + "昨天";
+  if (dateStr === today) return dayjs(dateStr).format("M月D日") + " " + "今天";
+  if (dateStr === yesterday)
+    return dayjs(dateStr).format("M月D日") + " " + "昨天";
   return dayjs(dateStr).format("M月D日");
 };
 //
@@ -505,12 +503,13 @@ const formatDate = (dateStr: string) => {
 
 // 根据记录类型和分类名获取图标
 const getRecordIcon = (record: BillRecord) => {
-  const categories = record.type === 'expense'
-    ? recordsStore.expenseCategories
-    : recordsStore.incomeCategories
-  const found = categories.find(c => c.name === record.category)
-  return found?.icon || 'More'   // 找不到就用默认图标
-}
+  const categories =
+    record.type === "expense"
+      ? recordsStore.expenseCategories
+      : recordsStore.incomeCategories;
+  const found = categories.find((c) => c.name === record.category);
+  return found?.icon || "More"; // 找不到就用默认图标
+};
 
 /**
  * 获取指定日期的月份统计数据
@@ -555,7 +554,7 @@ const editForm = reactive({
   amount: 0,
   category: "",
   date: "",
-  note:''
+  note: "",
 });
 
 const editCategories = computed(() =>
@@ -621,59 +620,117 @@ const backToToday = () => {
 :deep(.el-card__body) {
   padding: 0;
 }
-.list-container {
-  position: relative;
+.floating-panel {
+  position: fixed;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  border-radius: 16px 0 0 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 16px;
+  width: 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 
-/* 粘性头部样式 */
-.global-sticky-header {
+.panel-inner {
   width: 100%;
-  height: 56px;
   display: flex;
+  flex-direction: column;
   align-items: center;
+  gap: 10px;
+}
+/* 月份选择器区域 */
+.panel-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+/* 统计信息 */
+.stat-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.stat-mini {
+  display: flex;
+  flex-direction: column;
   justify-content: space-between;
-  padding: 0 24px;
+  font-size: 13px;
+}
+
+.stat-mini .label {
+  color: #666;
+}
+
+.stat-mini .val {
+  font-weight: 600;
+  color: #333;
+}
+
+.stat-mini .val.income {
+  color: #67c23a;
+}
+
+.back-today-sticky-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  writing-mode: vertical-rl;          /* 文字从上到下，从右到左排列 */
+  text-orientation: upright;          /* 保持字符正向，不旋转 */
+  letter-spacing: 2px;                /* 字间距 */
+  height: auto;                       /* 让按钮高度自适应文字 */
+  min-height: 80px;  
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 0 12px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.back-today-sticky-btn:hover {
+  border-color: #6366f1;
+  color: #6366f1;
+  background: #f5f7ff;
+}
+
+/* 隐藏 DatePicker 的边框 */
+:deep(.month-picker-compact) {
+  width: 110px;
+}
+
+:deep(.month-picker-compact .el-input__wrapper) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  cursor: pointer;
+}
+
+:deep(.month-picker-compact .el-input__inner) {
+  font-weight: 700;
+  font-size: 17px;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.list-container {
+  position: relative;
 }
 
 .list-content {
   padding: 0 0 24px;
   background: #ffffff;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 6px 12px;
-  margin-left: -12px;
-  border-radius: 12px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.header-left:hover {
-  background: #f8fafc;
-}
-
-.header-left:active {
-  transform: scale(0.98);
-}
-
-.arrow-icon-mini {
-  font-size: 14px;
-  color: #94a3b8;
-  transition: transform 0.3s ease;
-}
-
-.header-left:hover .arrow-icon-mini {
-  color: #6366f1;
-  transform: translateY(1px);
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 32px;
 }
 
 .stat-mini {
@@ -707,25 +764,6 @@ const backToToday = () => {
   color: #10b981;
 }
 
-/* 隐藏 DatePicker 的边框 */
-:deep(.month-picker-compact) {
-  width: 110px;
-}
-
-:deep(.month-picker-compact .el-input__wrapper) {
-  background-color: transparent !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  cursor: pointer;
-}
-
-:deep(.month-picker-compact .el-input__inner) {
-  font-weight: 700;
-  font-size: 17px;
-  color: #0f172a;
-  cursor: pointer;
-}
-
 .summary-header {
   padding: 12px 0 24px;
   background: #fff;
@@ -733,23 +771,6 @@ const backToToday = () => {
   position: relative;
   z-index: 1;
   margin-bottom: 16px;
-}
-
-.back-today-sticky-btn {
-  margin-left: 12px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  color: #64748b;
-  font-weight: 700;
-  font-size: 12px;
-  padding: 0 12px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.back-today-sticky-btn:hover {
-  border-color: #6366f1;
-  color: #6366f1;
-  background: #f5f7ff;
 }
 
 .summary-stats-grid {
@@ -846,14 +867,6 @@ const backToToday = () => {
 
   .summary-stats-side {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .global-sticky-header {
-    padding: 0 16px;
-  }
-
-  .header-right {
-    gap: 12px;
   }
 
   .stat-mini {

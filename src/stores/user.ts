@@ -12,7 +12,7 @@ export interface User {
 // 预设测试账号
 const DEMO_USER: User = {
   username: "demo_001",
-  createdAt: new Date("2024-01-01").toISOString(),
+  createdAt: new Date("2024-01-01").toString(),
 };
 const DEMO_PASSWORD = "123456";
 
@@ -86,7 +86,7 @@ export const useUserStore = defineStore(
       // 创建新用户
       const newUser: User = {
         username,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date().toString(),
       };
 
       users[username] = { password, user: newUser };

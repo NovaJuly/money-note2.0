@@ -329,9 +329,6 @@ const currentExpense = computed(() =>
     .filter((r) => r.type === "expense")
     .reduce((s, r) => s + Number(r.amount), 0),
 );
-const currentBalance = computed(
-  () => currentIncome.value - currentExpense.value,
-);
 
 const compareIncome = computed(() =>
   compareRecords.value

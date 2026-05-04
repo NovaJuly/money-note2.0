@@ -2,11 +2,6 @@
   <div class="accounting">
     <main class="page-content">
       <!-- 统计卡片 -->
-      <StatsCard
-        :monthlyIncome="recordsStore.totalIncome"
-        :monthlyExpense="recordsStore.totalExpense"
-        :monthlyBalance="recordsStore.totalIncome - recordsStore.totalExpense"
-      />
       <!-- 记账表单 -->
       <RecordForm />
       <!-- 流水列表 -->
@@ -18,7 +13,6 @@
 </template>
 <script setup lang="ts">
 import { useRecordsStore } from "@/stores/records";
-import StatsCard from "@/components/StatsCard.vue";
 import RecordForm from "@/components/RecordForm.vue";
 import RecordList from "@/components/RecordList.vue";
 

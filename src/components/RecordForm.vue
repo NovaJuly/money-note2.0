@@ -106,10 +106,10 @@ const categories = computed(() => {
   ? recordsStore.expenseCategories
   : recordsStore.incomeCategories;
 });
-onMounted(() => {
-  console.log('当前支出分类:', recordsStore.expenseCategories)
-  console.log('当前收入分类:', recordsStore.incomeCategories)
-})
+// onMounted(() => {
+//   console.log('当前支出分类:', recordsStore.expenseCategories)
+//   console.log('当前收入分类:', recordsStore.incomeCategories)
+// })
 // 类型切换时重置分类
 watch(
   () => form.type,

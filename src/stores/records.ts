@@ -32,11 +32,11 @@ export const EXPENSE_CATEGORIES: CategoryItem[] = [
   { id: 5, name: "娱乐", icon: "SwitchFilled", type: "expense" },
   { id: 6, name: "医疗", icon: "Help", type: "expense" },
   { id: 7, name: "教育", icon: "School", type: "expense" },
-  { id: 8, name: "人情", icon: "Present", type: "expense" },
+  { id: 8, name: "转账", icon: "Present", type: "expense" },
   { id: 9, name: "通讯", icon: "PhoneFilled", type: "expense" },
   {
     id: 10,
-    name: "其他支出",
+    name: "其他",
     icon: "More",
     type: "expense",
   },
@@ -45,10 +45,10 @@ export const EXPENSE_CATEGORIES: CategoryItem[] = [
 // 默认收入分类
 export const INCOME_CATEGORIES: CategoryItem[] = [
   { id: 11, name: "工资", icon: "Money", type: "income" },
-  { id: 12, name: "奖金", icon: "Present", type: "income" },
+  { id: 12, name: "转账", icon: "Present", type: "income" },
   { id: 13, name: "理财", icon: "TrendCharts", type: "income" },
   { id: 14, name: "退款", icon: "Wallet", type: "income" },
-  { id: 15, name: "其他收入", icon: "More", type: "income" },
+  { id: 15, name: "其他", icon: "More", type: "income" },
 ];
 export const useRecordsStore = defineStore(
   "records",
@@ -262,6 +262,7 @@ export const useRecordsStore = defineStore(
       try {
         await categoriesApi.deleteCategory(id);
         await loadCategories();
+        ElMessage.success("删除成功");
       } catch (error: any) {
         ElMessage.error(error.message || "删除失败");
       }
