@@ -6,7 +6,7 @@
         @end-reached="loadMore"
         :end-reached-threshold="20"
       >
-        <!-- 原有的总览头部 -->
+        <!-- 总览头部 -->
         <div class="summary-header" ref="summaryRef">
           <div class="summary-stats-grid">
             <div class="summary-item main today-highlight">
@@ -68,6 +68,7 @@
             <div class="record-group">
               <div class="date-header">
                 <span class="date-text">{{ formatDate(date) }}</span>
+                
                 <div class="date-total">
                   <span class="expense-sum">
                     支 {{ getDateExpense(records).toFixed(2) }}
@@ -77,12 +78,14 @@
                   </span>
                 </div>
               </div>
+              
               <div
                 v-for="record in records"
                 :key="record.id"
                 class="record-item"
                 @click="openEdit(record)"
               >
+              
                 <div class="record-icon-wrapper">
                   <el-icon class="category-icon">
                     <component :is="getRecordIcon(record)" />
@@ -94,11 +97,10 @@
                   </div>
                   <div class="content-bottom">
                     <span class="record-time">{{
-                      formatDate(record.date)
+                      dayjs(record.date).format("HH:mm:ss")
                     }}</span>
                     <span v-if="record.note" class="record-note-text">
-                      ● {{ record.note }}</span
-                    >
+                      ● {{ record.note }}</span>
                   </div>
                 </div>
                 <div class="record-amount-section">
@@ -189,7 +191,7 @@
         <RecordEditDialog
           v-model="editDialogVisible"
           :record="editingRecord"
-          :maxlength="2000"
+          :maxlength="100"
         />
       </el-form>
       <template #footer>

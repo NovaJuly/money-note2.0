@@ -28,7 +28,7 @@ export const EXPENSE_CATEGORIES: CategoryItem[] = [
   { id: 1, name: "餐饮", icon: "Food", type: "expense" },
   { id: 2, name: "交通", icon: "Place", type: "expense" },
   { id: 3, name: "购物", icon: "ShoppingCart", type: "expense" },
-  { id: 4, name: "住房", icon: "House", type: "expense" },
+  { id: 4, name: "消费", icon: "Wallet", type: "expense" },
   { id: 5, name: "娱乐", icon: "SwitchFilled", type: "expense" },
   { id: 6, name: "医疗", icon: "Help", type: "expense" },
   { id: 7, name: "教育", icon: "School", type: "expense" },
@@ -94,8 +94,13 @@ export const useRecordsStore = defineStore(
     // 今日支出
     const todayExpense = computed(() => {
       const today = dayjs().format("YYYY-MM-DD");
+      const dateKey = dayjs(today).format("YYYY-MM-DD");
       return records.value
-        .filter((record) => record.date === today && record.type === "expense")
+        .filter(
+          (record) =>
+            dayjs(record.date).format("YYYY-MM-DD") === dateKey &&
+            record.type === "expense",
+        )
         .reduce((sum, record) => sum + (record.amount || 0), 0);
     });
 
@@ -114,8 +119,11 @@ export const useRecordsStore = defineStore(
       const sorted = [...valid].sort((a, b) => b.date.localeCompare(a.date));
 
       sorted.forEach((record) => {
-        groups[record.date] = groups[record.date] || [];
-        groups[record.date]!.push(record);
+        const dateKey = dayjs(record.date).format("YYYY-MM-DD");
+        if (!groups[dateKey]) {
+          groups[dateKey] = [];
+        }
+        groups[dateKey]!.push(record);
       });
       // 返回 [date, records][] 数组，并按日期倒序排列
       return Object.entries(groups).sort((a, b) => (a[0] < b[0] ? 1 : -1));

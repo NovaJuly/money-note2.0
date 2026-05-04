@@ -96,7 +96,7 @@ const form = reactive({
   type: "expense" as "income" | "expense",
   amount: 0,
   category: "",
-  date: dayjs().format("YYYY-MM-DD"),
+  date: dayjs().format("YYYY-MM-DD HH:mm:ss"),
   note: "",
 });
 

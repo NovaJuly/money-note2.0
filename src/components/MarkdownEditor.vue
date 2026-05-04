@@ -32,7 +32,7 @@ const props = withDefaults(
     maxlength?: number;
   }>(),
   {
-    maxlength: 2000, // 默认2000字
+    maxlength: 100, // 默认100字
   },
 );
 

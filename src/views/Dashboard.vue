@@ -21,7 +21,7 @@
 
       <!-- 每日明细标题 + 跳转月度 -->
       <div class="daily-header">
-        <h3>每日明细({{ now.format("YYYY-MM") }})</h3>
+        <h3>每月明细({{ now.format("YYYY-MM") }})</h3>
         <el-button type="warning" plain @click="goMonthlyReport">
           查看本月完整报表
         </el-button>

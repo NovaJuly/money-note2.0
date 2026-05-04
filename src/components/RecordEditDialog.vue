@@ -14,7 +14,7 @@ const props = withDefaults(defineProps<{
   record: BillRecord | null;
   maxlength?: number;
 }>(), {
-  maxlength: 2000,   // 默认2000字
+  maxlength: 100,   // 默认100字
 })
 const emit = defineEmits(["update:modelValue"]);
 
@@ -32,7 +32,7 @@ const defaultForm = (record: BillRecord | null) => ({
   type: (record?.type || "expense") as "income" | "expense",
   amount: record?.amount || 0,
   category: record?.category || "",
-  date: record?.date || new Date().toISOString().slice(0, 10),
+  date: record?.date || new Date().toLocaleDateString(),
   note: record?.note || "",
 });
 

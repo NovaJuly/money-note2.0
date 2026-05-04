@@ -1,4 +1,5 @@
 import http from "./request";
+import type { WechatBill } from "@/utils/wechatBillParser";
 
 // 记账记录类型
 export interface BillRecord {
@@ -31,4 +32,7 @@ export const updateRecord = (id: number, data: Partial<BillRecord>) => {
 // 删除
 export const deleteRecord = (id: number) => {
   return http.delete<ApiResponse<void>>(`/records/${id}`)
+}
+export const importRecords = (records: WechatBill[]) => {
+  return http.post('/records/import', { records })
 }

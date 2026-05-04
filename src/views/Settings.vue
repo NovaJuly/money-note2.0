@@ -11,6 +11,7 @@
             userStore.currentUser?.createdAt
           }}</el-descriptions-item>
         </el-descriptions>
+        <el-button type="primary" @click="refreshData">强制刷新数据</el-button>
       </el-tab-pane>
       <!-- 分类管理 -->
       <el-tab-pane label="分类管理" name="category">
@@ -96,14 +97,74 @@
       </el-tab-pane>
 
       <!-- 数据导入与导出 -->
-      <el-tab-pane label="数据导入与导出" name="data">
-        <div class="tab-content">
-          <el-result
-            icon="info"
-            title="功能开发中"
-            sub-title="数据导入与导出功能即将上线，敬请期待"
-          />
-        </div>
+      <el-tab-pane label="数据导入" name="import-export">
+        <el-card header="导入微信账单" style="margin-top: 16px">
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            :on-change="handleFileChange"
+            :limit="1"
+            accept=".xlsx"
+            drag
+          >
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">
+              将微信账单文件拖到此处，或<em>点击上传</em>
+            </div>
+            <template #tip>
+              <div class="el-upload__tip">
+                支持 .xlsx 文件，微信支付导出的账单格式
+              </div>
+            </template>
+          </el-upload>
+        </el-card>
+        <!-- 预览表格 -->
+        <el-card
+          v-if="showPreview"
+          header="预览导入数据"
+          style="margin-top: 16px"
+        >
+          <el-table
+            :data="importedRecords"
+            max-height="400"
+            style="width: 100%"
+          >
+            <el-table-column prop="selected" label="选择" width="50">
+              <template #default="{ row }">
+                <el-checkbox v-model="row.selected" />
+              </template>
+            </el-table-column>
+            <el-table-column prop="type" label="类型" width="70">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.record.type === 'income' ? 'success' : 'danger'"
+                  size="small"
+                >
+                  {{ row.record.type === "income" ? "收入" : "支出" }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="amount" label="金额" width="100">
+              <template #default="{ row }"
+                >¥{{ row.record.amount.toFixed(2) }}</template
+              >
+            </el-table-column>
+            <el-table-column prop="record.category" label="分类" width="100" />
+            <el-table-column prop="record.date" label="日期" width="120" />
+            <el-table-column prop="record.note" label="备注" min-width="180" />
+          </el-table>
+
+          <div style="margin-top: 12px; display: flex; gap: 12px">
+            <el-button
+              type="primary"
+              :loading="importing"
+              @click="confirmImport"
+            >
+              确认导入 {{ importedRecords.length }} 条记录
+            </el-button>
+            <el-button @click="cancelPreview">取消</el-button>
+          </div>
+        </el-card>
       </el-tab-pane>
     </el-tabs>
 
@@ -147,13 +208,79 @@ import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import * as categoriesApi from "@/api/categories";
+import * as recordsApi from "@/api/record";
 import { useRecordsStore } from "@/stores/records";
 import { CATEGORY_ICON_OPTIONS } from "@/utils/icons";
 import { useUserStore } from "@/stores/user";
+import { type WechatBill, parseWechatBill } from "@/utils/wechatBillParser";
 
 const recordsStore = useRecordsStore();
 const userStore = useUserStore();
+const rawRecords = ref<WechatBill[]>([]);
+const importedRecords = ref<{ record: WechatBill; selected: boolean }[]>([]);
 
+// 文件解析
+const importFile = ref<File | null>(null);
+const showPreview = ref(false);
+const importing = ref(false);
+const refreshData = async () => {
+  await recordsStore.loadRecords();
+  await categoriesApi.fetchCategories();
+};
+const handleFileChange = async (uploadFile: any) => {
+  const file = uploadFile.raw;
+  if (!file) return;
+
+  try {
+    const records = await parseWechatBill(file);
+    console.log(records);
+    importedRecords.value = records.map((record) => ({
+      record,
+      selected: true,
+    }));
+  } catch (e: any) {
+    ElMessage.error(e.message || "解析失败");
+  } finally {
+    showPreview.value = true;
+  }
+};
+const confirmImport = async () => {
+  if (importing.value) return;
+  const selected = importedRecords.value
+    .filter((r) => r.selected)
+    .map((r) => r.record);
+  if (selected.length === 0) {
+    ElMessage.warning("请至少选择一条记录");
+    return;
+  }
+
+  importing.value = true;
+  try {
+    // 调用后端批量导入接口
+    const res = await recordsApi.importRecords(selected);
+    if (res.code === 10000) {
+      const { successCount, failCount } = res.data || {};
+      ElMessage.success(
+        `导入完成：成功 ${successCount ?? selected.length} 条${failCount ? "，失败 " + failCount + " 条" : ""}`,
+      );
+      showPreview.value = false;
+      importedRecords.value = [];
+      // 可选：刷新记录列表
+      await recordsStore.loadRecords();
+    } else {
+      ElMessage.error(res.message || "导入失败");
+    }
+  } catch (e: any) {
+    ElMessage.error(e.message || "导入失败");
+  } finally {
+    importing.value = false;
+  }
+};
+
+const cancelPreview = () => {
+  showPreview.value = false;
+  importedRecords.value = [];
+};
 // 标签页
 const activeTab = ref("account");
 
@@ -213,6 +340,14 @@ const saveCategory = async () => {
     ElMessage.warning("分类名称不能为空");
     return;
   }
+  // 不能有重复的分类名称
+  if (
+    expenseCategories.value.some((c) => c.name === form.value.name) ||
+    incomeCategories.value.some((c) => c.name === form.value.name)
+  ) {
+    ElMessage.warning("分类名称不能重复");
+    return;
+  }
   saving.value = true;
   try {
     if (isEdit.value && editId.value) {
@@ -264,16 +399,16 @@ const deleteCategory = async (id: number) => {
 
 <style scoped>
 .settings-page {
-  max-width: 800px;
+  max-width: 1000px;
   margin: 20px auto;
 }
 .tab-content {
-  padding: 20px;
+  padding: 10px;
 }
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
 }
 </style>

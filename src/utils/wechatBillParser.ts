@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import dayjs from "dayjs";
 // 解析后的账单格式
 export interface WechatBill {
   type: "expense" | "income";
@@ -37,25 +38,34 @@ export const inferCategory = (
   counterparty: string,
   product: string,
   direction: string,
-):string => {
-  if(tradeType.includes('拼多多')||
-    counterparty.includes('淘宝')||
-    product.includes('京东')
-  ){
-    return '购物'
-  } else if(tradeType.includes('转账')
-    || counterparty.includes('转账')
-    || product.includes('转账')
-  ){
-    return '转账'
+): string => {
+  if (
+    direction === "收入" &&
+    (tradeType.includes("退款") ||
+      counterparty.includes("退款") ||
+      product.includes("退款"))
+  ) {
+    return "退款";
+  } else if (
+    tradeType.includes("拼多多") ||
+    counterparty.includes("淘宝") ||
+    product.includes("京东")
+  ) {
+    return "购物";
+  } else if (
+    tradeType.includes("转账") ||
+    counterparty.includes("转账") ||
+    product.includes("转账")
+  ) {
+    return "转账";
   }
   // 待完善其他分类规则
-  if(direction==='支出'){
-    return '消费'
-  } else if(direction==='收入'){
-    return '其他'
+  if (direction === "支出") {
+    return "消费";
+  } else if (direction === "收入") {
+    return "其他";
   }
-  return '其他'
+  return "其他";
 };
 /**
  * 解析微信支付账单 Excel 文件，返回可用于导入的记录数组
@@ -63,57 +73,77 @@ export const inferCategory = (
  */
 export function parseWechatBill(file: File): Promise<WechatBill[]> {
   return new Promise((resolve, reject) => {
-    const reader=new FileReader()
-    reader.onload=(e)=>{
-      try{
-        const data=new Uint8Array(e.target!.result as ArrayBuffer)
-        const workbook=XLSX.read(data,{type:'array'})
-        const sheetName=workbook.SheetNames[0]!
-        const worksheet=workbook.Sheets[sheetName]!
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target!.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0]!;
+        const worksheet = workbook.Sheets[sheetName]!;
         // 转换为二维数组，header:1 表示不生成对象，直接用数组行
-        const rows:any[][] = XLSX.utils.sheet_to_json(worksheet,{
-          header:1,
-          defval:''
-        }) as any[][]
+        const rows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          defval: "",
+        }) as any[][];
 
         // 找到明细表头行：包含“交易时间”的行
-        const headerIndex = rows.findIndex(
-          (row) => row[0] === '交易时间'
-        );
+        const headerIndex = rows.findIndex((row) => row[0] === "交易时间");
         if (headerIndex === -1) {
-          reject(new Error('未找到账单明细表头，请确认是微信支付导出的账单'));
+          reject(new Error("未找到账单明细表头，请确认是微信支付导出的账单"));
           return;
         }
-        const records:WechatBill[]=[]
+        const records: WechatBill[] = [];
         // 遍历明细行，从第二行开始（跳过表头）
-        for (let i = 1; i < rows.length; i++) {
+        for (let i = headerIndex + 1; i < rows.length; i++) {
           const row = rows[i];
-          if (!row||row.length<6) continue; // 跳过无效行
+          if (!row || row.length < 6) continue; // 跳过无效行
 
           // 只处理“支出”或“收入”，忽略中性交易
-          const direction = String(row[COL.DIRECTION] || '').trim();
-          if (direction !== '支出' && direction !== '收入') continue;
+          const direction = String(row[COL.DIRECTION] || "").trim();
+          if (direction !== "支出" && direction !== "收入") continue;
           // 解析金额，忽略无效金额
           const amount = parseFloat(row[COL.AMOUNT]);
           if (isNaN(amount) || amount <= 0) continue;
 
-          const tradeType = String(row[COL.TRADE_TYPE] || '').trim();
-          const counterparty = String(row[COL.COUNTERPARTY] || '').trim();
-          const product = String(row[COL.PRODUCT] || '').trim();
-          const datetime = String(row[COL.TIME] || '').trim();
-          const remark = String(row[COL.REMARK] || '').trim();
+          const tradeType = String(row[COL.TRADE_TYPE] || "").trim();
+          const counterparty = String(row[COL.COUNTERPARTY] || "").trim();
+          const product = String(row[COL.PRODUCT] || "").trim();
+          const rawTime = row[COL.TIME];
+          let datetime: string;
+          if (typeof rawTime === "number") {
+            const dateCode = XLSX.SSF.parse_date_code(rawTime);
+            if (dateCode && typeof dateCode.y === "number") {
+              // dateCode 结构：{ y: 2026, m: 3, d: 31, H: 6, M: 52, S: 1 }
+              datetime =
+                `${dateCode.y}-${String(dateCode.m).padStart(2, "0")}-${String(dateCode.d).padStart(2, "0")} ` +
+                `${String(dateCode.H).padStart(2, "0")}:${String(dateCode.M).padStart(2, "0")}:${String(dateCode.S).padStart(2, "0")}`;
+            } else {
+              datetime = String(rawTime || "").trim();
+            }
+          } else {
+            datetime = String(rawTime || "").trim();
+          }
 
-          const type = direction === '支出' ? 'expense' : 'income';
-          const date = datetime.substring(0, 10); // YYYY-MM-DD
-          const category = inferCategory(tradeType, counterparty, product,direction);
+          const remark = String(row[COL.REMARK] || "").trim();
 
-          let note='';
-          if (counterparty&&counterparty!== '/') {
-            note += `${counterparty}`;
-          } else if (product && product !== '/') {
-            note += `,${product}`;
-          }else if(remark&&remark!== '/'){
-            note += `,${remark}`;
+          const type = direction === "支出" ? "expense" : "income";
+          const date = dayjs(datetime).format("YYYY-MM-DD HH:mm:ss"); 
+          const category = inferCategory(
+            tradeType,
+            counterparty,
+            product,
+            direction,
+          );
+
+          let note = "";
+          if (counterparty && counterparty !== "/") {
+            note = counterparty;
+          }
+          if (product && product !== "/") {
+            note = note ? `${note}, ${product}` : product;
+          }
+          if (remark && remark !== "/") {
+            note = note ? `${note}, ${remark}` : remark;
           }
           note = note.substring(0, 30);
           records.push({
@@ -126,11 +156,13 @@ export function parseWechatBill(file: File): Promise<WechatBill[]> {
         }
 
         resolve(records);
-      } catch(e){
-        reject(e)
+      } catch (e) {
+        reject(e);
       }
-    }
-    reader.onerror=(e)=>{reject(new Error('文件读取失败'))}
+    };
+    reader.onerror = (e) => {
+      reject(new Error("文件读取失败"));
+    };
     reader.readAsArrayBuffer(file);
   });
-};
+}
