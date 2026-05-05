@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import { baseUrl } from './baseUrl'
 
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
@@ -18,7 +19,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://10.25.47.28:8080',  // 后端地址
+        target: baseUrl,  // 后端地址
         changeOrigin: true,
         // 如果后端没有 /api 前缀，可以 rewrite 掉
         // rewrite: (path) => path.replace(/^\/api/, '')
