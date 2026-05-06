@@ -29,7 +29,7 @@
 
       <!-- 无数据提示 -->
       <div v-if="dailyCards.length === 0" class="empty-tip">
-        暂无记账记录，快去记一笔吧～
+        本月暂无记账记录，快去记一笔吧～
       </div>
 
       <!-- 每日卡片 -->

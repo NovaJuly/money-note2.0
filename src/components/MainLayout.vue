@@ -13,9 +13,9 @@
         :collapse="collapsed"
         collapse-transition
         router
-        background-color="#2c3e50"
-        text-color="#ecf0f1"
-        active-text-color="#667eea"
+        background-color="#ffffff"
+        text-color="#333333"
+        active-text-color="#333333"
       >
         <el-menu-item index="/dashboard">
           <el-icon><DataBoard /></el-icon>
@@ -42,8 +42,25 @@
       <header class="dashboard-header">
         <div class="header-default-content">
           <h1>📒 记一笔 · 财务手账</h1>
+          <!-- 后端状态指示器 -->
+          <el-tooltip
+            :content="isBackendOnline ? '服务器连接正常' : '服务器离线'"
+            placement="bottom"
+          >
+            <span
+              class="status-indicator"
+              :class="{ online: isBackendOnline, offline: !isBackendOnline }"
+            >
+              <span class="status-dot"></span>
+              <span class="status-text">{{
+                isBackendOnline ? "服务器连接正常" : "服务器离线"
+              }}</span>
+            </span>
+          </el-tooltip>
           <div class="user-info">
-            <span class="welcome">👋 {{ userStore.currentUser?.username }}</span>
+            <span class="welcome"
+              >👋 {{ userStore.currentUser?.username }}</span
+            >
             <!-- <el-button @click="router.push('/settings')" link>设置</el-button> -->
             <el-button type="danger" text @click="handleLogout">
               <el-icon><SwitchButton /></el-icon>
@@ -78,6 +95,7 @@ import {
   Setting,
   SwitchButton,
 } from "@element-plus/icons-vue";
+import { isBackendOnline } from "@/api/request";
 
 const route = useRoute();
 const router = useRouter();
@@ -114,7 +132,7 @@ const handleLogout = async () => {
 /* 左侧栏 */
 .sidebar {
   width: 110px;
-  background: #2c3e50;
+  background: #ffffff;
   transition: width 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
   display: flex;
   flex-direction: column;
@@ -128,7 +146,7 @@ const handleLogout = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ecf0f1;
+  color: #333333;
   cursor: pointer;
   font-size: 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -141,6 +159,14 @@ const handleLogout = async () => {
   border-right: none;
   flex: 1;
   width: 100% !important;
+}
+.sidebar .el-menu-item.is-active {
+  background-color: #f0f2f5; /* 选中项浅灰背景 */
+  color: #409eff; /* 主题蓝色文字 */
+}
+
+.sidebar .el-menu-item:hover {
+  background-color: #f5f7fa; /* 悬停效果 */
 }
 .toggle-icon {
   display: inline-flex;
@@ -191,6 +217,42 @@ const handleLogout = async () => {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+}
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: default;
+  transition: all 0.3s;
+  color: #999; /* 默认灰色（用于过渡状态） */
+}
+
+.status-indicator.online {
+  color: #67c23a;
+  background: rgba(103, 194, 58, 0.08);
+}
+
+.status-indicator.offline {
+  color: #f56c6c;
+  background: rgba(245, 108, 108, 0.08);
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor; /* 自动跟随父级 color */
+  box-shadow: none; /* 盒子阴影可以省略，或者直接为圆点加发光效果 */
+}
+
+.status-text {
+  line-height: 1;
+  color: inherit; /* 从 .status-indicator 继承文字颜色 */
 }
 
 .dashboard-header h1 {

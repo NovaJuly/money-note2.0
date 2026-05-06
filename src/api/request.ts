@@ -1,7 +1,9 @@
 // 封装axios请求
 import axios from "axios";
+import { ref } from "vue";
 import type { AxiosResponse } from "axios";
-import { ElMessage } from "element-plus";
+// 全局响应式状态：后端是否可达
+export const isBackendOnline = ref(false); // 默认离线状态
 // 创建axios实例
 const instance = axios.create({
   baseURL: import.meta.env.VITE_BASE_URL || "/api",
@@ -22,7 +24,10 @@ instance.interceptors.request.use((config) => {
 });
 // 响应拦截器
 instance.interceptors.response.use(
-  <T>(response: AxiosResponse<T>): T => response.data,
+  <T>(response: AxiosResponse<T>): T => {
+    isBackendOnline.value = true;
+    return response.data;
+  },
   (error: any) => {
     // 如果后端有返回（例如 4xx/5xx），我们可以拿到 error.response.data
     if (error.response && error.response.data) {
@@ -30,6 +35,7 @@ instance.interceptors.response.use(
       return Promise.reject(error.response.data);
     }
     // 真正的网络不通、超时等，抛出原始错误
+    isBackendOnline.value = false;
     return Promise.reject(error);
   },
 );
