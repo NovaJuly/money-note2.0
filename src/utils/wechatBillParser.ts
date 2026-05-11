@@ -76,8 +76,17 @@ export function parseWechatBill(file: File): Promise<WechatBill[]> {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const data = new Uint8Array(e.target!.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
+        const data = e.target!.result
+        const isCSV = file.name.toLowerCase().endsWith('.csv')
+        let workbook: XLSX.WorkBook
+        if (isCSV) {
+          // CSV：直接使用 xlsx 读取文本
+          workbook = XLSX.read(data as string, { type: 'string', raw: true })
+        } else {
+          // Excel：读取二进制数组
+          workbook = XLSX.read(new Uint8Array(data as ArrayBuffer), { type: 'array' })
+        }
+
         const sheetName = workbook.SheetNames[0]!;
         const worksheet = workbook.Sheets[sheetName]!;
         // 转换为二维数组，header:1 表示不生成对象，直接用数组行
@@ -163,6 +172,11 @@ export function parseWechatBill(file: File): Promise<WechatBill[]> {
     reader.onerror = (e) => {
       reject(new Error("文件读取失败"));
     };
-    reader.readAsArrayBuffer(file);
+    // 根据文件类型选择读取方式
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      reader.readAsText(file, 'UTF-8')
+    } else {
+      reader.readAsArrayBuffer(file)
+    }
   });
 }

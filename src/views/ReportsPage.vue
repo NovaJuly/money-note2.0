@@ -109,7 +109,7 @@
     <el-row :gutter="20">
       <el-col :xs="24" :md="12">
         <div class="chart-card">
-          <h4>支出排行 Top5</h4>
+          <h4>支出排行</h4>
           <el-table
             v-if="topExpenseCategories.length > 0"
             :data="topExpenseCategories"
@@ -131,7 +131,7 @@
       </el-col>
       <el-col :xs="24" :md="12">
         <div class="chart-card">
-          <h4>收入排行 Top5</h4>
+          <h4>收入排行</h4>
           <el-table
             v-if="topIncomeCategories.length > 0"
             :data="topIncomeCategories"

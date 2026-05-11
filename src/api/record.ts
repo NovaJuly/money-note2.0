@@ -18,8 +18,11 @@ interface ApiResponse<T> {
   data: T
 }
 // 获取
-export const fetchRecords = () => {
-  return http.get<ApiResponse<BillRecord[]>>('/records')
+export const fetchRecords = (params?: {
+  startDate?: string
+  endDate?: string
+}) => {
+  return http.get<ApiResponse<BillRecord[]>>('/records', { params })
 }
 // 新增
 export const createRecord = (data: Omit<BillRecord, 'id' | 'createdAt'>) => {

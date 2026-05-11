@@ -73,6 +73,8 @@
         type="primary"
         @click.prevent="handleAdd"
         style="margin-top: 8px"
+        :loading="addLoading"
+        :disabled="addLoading"
       >
         添加记录
       </el-button>
@@ -88,7 +90,7 @@ import dayjs from "dayjs";
 import { useThrottleFn } from "@vueuse/core";
 import MarkdownEditor from "@/components/MarkdownEditor.vue";
 import { onMounted } from 'vue'
-
+const addLoading = ref(false)
 
 const recordsStore = useRecordsStore();
 
@@ -127,7 +129,8 @@ const handleEditWheel = (e: WheelEvent) => {
   form.amount = Math.max(0, Math.min(99999999, parseFloat(newVal.toFixed(2))));
 };
 
-const handleAdd = () => {
+const handleAdd = async () => {
+
   console.log("Form: handleAdd called", { ...form });
   if (!form.category) {
     ElMessage.warning("请选择分类");
@@ -138,8 +141,11 @@ const handleAdd = () => {
     ElMessage.warning("金额格式不正确");
     return;
   }
+    // 防止重复点击
+  if (addLoading.value) return
+  addLoading.value = true
   try {
-    recordsStore.addRecord({
+    await recordsStore.addRecord({
       type: form.type,
       amount: safeAmount,
       category: form.category,
@@ -152,6 +158,8 @@ const handleAdd = () => {
   } catch (error) {
     console.error("Form: Error adding record", error);
     ElMessage.error("添加失败，请查看控制台错误信息");
+  } finally {
+    addLoading.value = false
   }
 };
 </script>

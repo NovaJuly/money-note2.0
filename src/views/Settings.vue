@@ -96,15 +96,15 @@
         </div>
       </el-tab-pane>
 
-      <!-- 数据导入与导出 -->
-      <el-tab-pane label="数据导入" name="import-export">
+      <!-- 数据导入 -->
+      <el-tab-pane label="数据导入" name="import">
         <el-card header="导入微信账单" style="margin-top: 16px">
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
             :on-change="handleFileChange"
             :limit="1"
-            accept=".xlsx"
+            accept=".xlsx,.csv"
             drag
           >
             <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
@@ -113,7 +113,7 @@
             </div>
             <template #tip>
               <div class="el-upload__tip">
-                支持 .xlsx 文件，微信支付导出的账单格式
+                支持 .xlsx 或 .csv 文件，微信支付导出的账单格式
               </div>
             </template>
           </el-upload>
@@ -166,6 +166,42 @@
           </div>
         </el-card>
       </el-tab-pane>
+      <!-- 数据导出 -->
+      <el-tab-pane label="数据导出" name="export">
+        <el-card header="导出数据" style="margin-top: 16px">
+          <div class="export-options">
+            <el-radio-group v-model="timeRange">
+              <el-radio label="week">本周</el-radio>
+              <el-radio label="month">本月</el-radio>
+              <el-radio label="year">本年</el-radio>
+              <el-radio label="all">全部</el-radio>
+              <el-radio label="custom">自定义</el-radio>
+            </el-radio-group>
+            <!-- 自定义日期范围 -->
+            <el-date-picker
+              v-if="timeRange === 'custom'"
+              v-model="customRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+            />
+            <!-- 导出按钮 -->
+            <div class="export-buttons">
+              <el-button @click="handleExport('xlsx')" :loading="exportLoading"
+    :disabled="exportLoading">
+                导出 Excel
+              </el-button>
+              <el-button @click="handleExport('json')" :loading="exportLoading"
+    :disabled="exportLoading">导出 JSON</el-button>
+              <el-button @click="handleExport('csv')" :loading="exportLoading"
+    :disabled="exportLoading">导出 CSV</el-button>
+            </div>
+          </div>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 添加/编辑分类对话框 -->
@@ -204,6 +240,7 @@
 </template>
 
 <script setup lang="ts">
+import dayjs from "dayjs";
 import { ref, computed, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
@@ -213,20 +250,24 @@ import { useRecordsStore } from "@/stores/records";
 import { CATEGORY_ICON_OPTIONS } from "@/utils/icons";
 import { useUserStore } from "@/stores/user";
 import { type WechatBill, parseWechatBill } from "@/utils/wechatBillParser";
+import { exportCsv, exportExcel, exportJson } from "@/utils/export";
 
 const recordsStore = useRecordsStore();
 const userStore = useUserStore();
-const rawRecords = ref<WechatBill[]>([]);
-const importedRecords = ref<{ record: WechatBill; selected: boolean }[]>([]);
+// 标签页
+const activeTab = ref("account");
 
-// 文件解析
-const importFile = ref<File | null>(null);
+/** 导入相关代码,至314行
+ */
+const importedRecords = ref<{ record: WechatBill; selected: boolean }[]>([]);
 const showPreview = ref(false);
 const importing = ref(false);
+// 刷新数据
 const refreshData = async () => {
   await recordsStore.loadRecords();
   await categoriesApi.fetchCategories();
 };
+// 处理文件上传
 const handleFileChange = async (uploadFile: any) => {
   const file = uploadFile.raw;
   if (!file) return;
@@ -244,6 +285,7 @@ const handleFileChange = async (uploadFile: any) => {
     showPreview.value = true;
   }
 };
+// 确认导入
 const confirmImport = async () => {
   if (importing.value) return;
   const selected = importedRecords.value
@@ -276,26 +318,95 @@ const confirmImport = async () => {
     importing.value = false;
   }
 };
-
+// 取消预览
 const cancelPreview = () => {
   showPreview.value = false;
   importedRecords.value = [];
 };
-// 标签页
-const activeTab = ref("account");
 
+/** 导出相关代码,至390行
+ */
+const timeRange = ref<"week" | "month" | "year" | "all" | "custom">("week");
+const customRange = ref<string[]>(["2026-01-01", dayjs().format("YYYY-MM-DD")]);
+const exportLoading = ref(false)
+
+const getExportRecords = async () => {
+  let startDate: string | undefined;
+  let endDate: string | undefined;
+  const now = dayjs();
+
+  switch (timeRange.value) {
+    case "week":
+      startDate = now.startOf("week").format("YYYY-MM-DD");
+      endDate = now.endOf("week").format("YYYY-MM-DD");
+      break;
+    case "month":
+      startDate = now.startOf("month").format("YYYY-MM-DD");
+      endDate = now.endOf("month").format("YYYY-MM-DD");
+      break;
+    case "year":
+      startDate = now.startOf("year").format("YYYY-MM-DD");
+      endDate = now.endOf("year").format("YYYY-MM-DD");
+      break;
+    case "all":
+      // 不传递日期参数，默认导出所有记录
+      startDate = undefined;
+      endDate = undefined;
+      break;
+    case "custom":
+      if (!customRange.value || customRange.value.length !== 2) {
+        ElMessage.warning("请选择自定义日期范围");
+        return [];
+      }
+      startDate = customRange.value[0];
+      endDate = customRange.value[1];
+      break;
+    default:
+      break;
+  }
+  try {
+    const records = await recordsApi.fetchRecords({ startDate, endDate });
+    if (records.code === 10000) {
+      return records.data || [];
+    }
+    ElMessage.error(records.message || "导出失败");
+    return [];
+  } catch (e: any) {
+    ElMessage.error(e.message || "导出失败");
+    return [];
+  }
+};
+const handleExport = async (type: "xlsx" | "json" | "csv") => {
+  // 防止重复点击
+  if (exportLoading.value) return
+  exportLoading.value = true
+  const records = await getExportRecords();
+  if (!records.length) {
+    ElMessage.warning('所选范围无记录');
+    exportLoading.value = false
+    return;
+  }
+  const dateStr = dayjs().format('YYYY-MM-DD');
+  const fileName = `账单导出_${dateStr}`;
+  if (type === 'xlsx') exportExcel(records, fileName);
+  else if (type === 'json') exportJson(records, fileName);
+  else if (type === 'csv') exportCsv(records, fileName);
+  ElMessage.success(`已导出 ${records.length} 条记录到 ${fileName}`);
+  exportLoading.value = false
+};
+
+/** 以下为分类相关代码
+ */
 // 对话框状态
 const dialogVisible = ref(false);
 const isEdit = ref(false);
 const saving = ref(false);
 const currentType = ref<"expense" | "income">("expense");
 const editId = ref<number | null>(null);
-
 const form = ref({
   name: "",
   icon: "MoreFilled",
 });
-
 // 从 store 获取分类
 const expenseCategories = computed(() => recordsStore.expenseCategories);
 const incomeCategories = computed(() => recordsStore.incomeCategories);
@@ -311,7 +422,6 @@ onMounted(async () => {
     loading.value = false;
   }
 });
-
 // 添加分类
 const addCategory = (type: "expense" | "income") => {
   isEdit.value = false;
@@ -320,7 +430,6 @@ const addCategory = (type: "expense" | "income") => {
   form.value = { name: "", icon: "MoreFilled" };
   dialogVisible.value = true;
 };
-
 // 编辑分类
 const editCategory = (row: any) => {
   if (isDefaultCategory(row.id)) {
@@ -333,7 +442,6 @@ const editCategory = (row: any) => {
   form.value = { name: row.name, icon: row.icon };
   dialogVisible.value = true;
 };
-
 // 保存分类（新增或编辑）
 const saveCategory = async () => {
   if (!form.value.name.trim()) {
@@ -370,7 +478,6 @@ const saveCategory = async () => {
     saving.value = false;
   }
 };
-
 // 删除分类
 const deleteCategory = async (id: number) => {
   if (isDefaultCategory(id)) {
@@ -410,5 +517,44 @@ const deleteCategory = async (id: number) => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 10px;
+}
+/* ========== 数据导出区域样式 ========== */
+.export-options {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 时间范围单选组：让选项自动换行 */
+.export-options .el-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 4px;
+}
+
+/* 日期选择器宽度自适应 */
+.export-options .el-date-picker {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* 导出按钮组：右对齐，间距 */
+.export-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+/* 按钮修饰（可选） */
+.export-buttons .el-button {
+  min-width: 90px;
+}
+
+/* 卡片内标题微调 */
+.el-card__header {
+  font-weight: 600;
+  font-size: 16px;
+  color: #303133;
 }
 </style>

@@ -1,7 +1,6 @@
 <template>
   <div class="accounting">
     <main class="page-content">
-      <!-- 统计卡片 -->
       <!-- 记账表单 -->
       <RecordForm />
       <!-- 流水列表 -->
