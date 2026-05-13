@@ -134,6 +134,7 @@
                 <el-checkbox v-model="row.selected" />
               </template>
             </el-table-column>
+            <el-table-column prop="record.date" label="日期" width="120" />
             <el-table-column prop="type" label="类型" width="70">
               <template #default="{ row }">
                 <el-tag
@@ -144,13 +145,12 @@
                 </el-tag>
               </template>
             </el-table-column>
+            <el-table-column prop="record.category" label="分类" width="100" />
             <el-table-column prop="amount" label="金额" width="100">
               <template #default="{ row }"
                 >¥{{ row.record.amount.toFixed(2) }}</template
               >
             </el-table-column>
-            <el-table-column prop="record.category" label="分类" width="100" />
-            <el-table-column prop="record.date" label="日期" width="120" />
             <el-table-column prop="record.note" label="备注" min-width="180" />
           </el-table>
 
@@ -166,16 +166,16 @@
           </div>
         </el-card>
       </el-tab-pane>
-      <!-- 数据导出 -->
+      <!-- 前端式数据导出 -->
       <el-tab-pane label="数据导出" name="export">
         <el-card header="导出数据" style="margin-top: 16px">
           <div class="export-options">
             <el-radio-group v-model="timeRange">
-              <el-radio label="week">本周</el-radio>
-              <el-radio label="month">本月</el-radio>
-              <el-radio label="year">本年</el-radio>
-              <el-radio label="all">全部</el-radio>
-              <el-radio label="custom">自定义</el-radio>
+              <el-radio value="week">本周</el-radio>
+              <el-radio value="month">本月</el-radio>
+              <el-radio value="year">本年</el-radio>
+              <el-radio value="all">全部</el-radio>
+              <el-radio value="custom">自定义</el-radio>
             </el-radio-group>
             <!-- 自定义日期范围 -->
             <el-date-picker
@@ -198,10 +198,13 @@
     :disabled="exportLoading">导出 JSON</el-button>
               <el-button @click="handleExport('csv')" :loading="exportLoading"
     :disabled="exportLoading">导出 CSV</el-button>
+              <el-button @click="handleExportFromBackend" :loading="exportLoading"
+    :disabled="exportLoading">导出Excel(后端式)</el-button>
             </div>
           </div>
         </el-card>
       </el-tab-pane>
+      <!-- 后端式数据导出 -->
     </el-tabs>
 
     <!-- 添加/编辑分类对话框 -->
@@ -324,15 +327,15 @@ const cancelPreview = () => {
   importedRecords.value = [];
 };
 
-/** 导出相关代码,至390行
+/** 导出相关代码,至450行
  */
 const timeRange = ref<"week" | "month" | "year" | "all" | "custom">("week");
 const customRange = ref<string[]>(["2026-01-01", dayjs().format("YYYY-MM-DD")]);
 const exportLoading = ref(false)
 
+let startDate: string | undefined;
+let endDate: string | undefined;
 const getExportRecords = async () => {
-  let startDate: string | undefined;
-  let endDate: string | undefined;
   const now = dayjs();
 
   switch (timeRange.value) {
@@ -386,14 +389,59 @@ const handleExport = async (type: "xlsx" | "json" | "csv") => {
     exportLoading.value = false
     return;
   }
-  const dateStr = dayjs().format('YYYY-MM-DD');
-  const fileName = `账单导出_${dateStr}`;
+  const fileName = `前端账单导出${startDate?startDate : '全'}-${endDate?endDate : '部'}`;
   if (type === 'xlsx') exportExcel(records, fileName);
   else if (type === 'json') exportJson(records, fileName);
   else if (type === 'csv') exportCsv(records, fileName);
   ElMessage.success(`已导出 ${records.length} 条记录到 ${fileName}`);
   exportLoading.value = false
 };
+const handleExportFromBackend = async () => {
+  const now = dayjs();
+
+  switch (timeRange.value) {
+    case "week":
+      startDate = now.startOf("week").format("YYYY-MM-DD");
+      endDate = now.endOf("week").format("YYYY-MM-DD");
+      break;
+    case "month":
+      startDate = now.startOf("month").format("YYYY-MM-DD");
+      endDate = now.endOf("month").format("YYYY-MM-DD");
+      break;
+    case "year":
+      startDate = now.startOf("year").format("YYYY-MM-DD");
+      endDate = now.endOf("year").format("YYYY-MM-DD");
+      break;
+    case "all":
+      // 不传递日期参数，默认导出所有记录
+      startDate = undefined;
+      endDate = undefined;
+      break;
+    case "custom":
+      if (!customRange.value || customRange.value.length !== 2) {
+        ElMessage.warning("请选择自定义日期范围");
+        return [];
+      }
+      startDate = customRange.value[0];
+      endDate = customRange.value[1];
+      break;
+    default:
+      break;
+  }
+  try {
+    const res = await recordsApi.downloadBackendXlsx({ startDate, endDate })
+    const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `后端账单导出${startDate ? startDate : '全'}-${endDate ? endDate : '部'}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    ElMessage.success('导出成功');
+  } catch {
+    ElMessage.error('导出失败');
+  }
+}
 
 /** 以下为分类相关代码
  */

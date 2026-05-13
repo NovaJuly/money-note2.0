@@ -156,10 +156,10 @@ export function parseWechatBill(file: File): Promise<WechatBill[]> {
           }
           note = note.substring(0, 30);
           records.push({
+            date,
+            category,
             type,
             amount: Math.round(amount * 100) / 100, // 保留两位小数
-            category,
-            date,
             note,
           });
         }

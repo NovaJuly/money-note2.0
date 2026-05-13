@@ -6,7 +6,7 @@
 [![Element Plus](https://img.shields.io/badge/Element%20Plus-2.x-409eff?logo=elementplus)](https://element-plus.org)
 
 一个支持**后端优先、离线可用**的全栈记账应用。\
-帮助你轻松记录日常收支、管理分类、导入微信账单，所有数据安全存储在你的服务器上。\
+帮助你轻松记录日常收支、管理分类、导入微信账单\
 **未来计划：接入大语言模型，实现自然语言记账、智能分类推荐与消费趋势预测。**
 
 ***

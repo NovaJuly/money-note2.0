@@ -39,3 +39,9 @@ export const deleteRecord = (id: number) => {
 export const importRecords = (records: WechatBill[]) => {
   return http.post('/records/import', { records })
 }
+export const downloadBackendXlsx = (params?: { startDate?: string; endDate?: string }) => {
+  return http.get('/records/export/xlsx', {
+    params,
+    responseType: 'blob'  // 关键：以二进制方式接收
+  })
+}

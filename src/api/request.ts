@@ -26,6 +26,9 @@ instance.interceptors.request.use((config) => {
 instance.interceptors.response.use(
   <T>(response: AxiosResponse<T>): T => {
     isBackendOnline.value = true;
+    if (response.config.responseType === 'blob') {
+      return response as any; // 保持完整的响应对象，让调用方自行处理 blob
+    }
     return response.data;
   },
   (error: any) => {

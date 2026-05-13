@@ -13,11 +13,11 @@ export function downloadBlob(content: string, fileName: string, mimeType: string
 // 导出excel文件
 export function exportExcel(records: BillRecord[], fileName: string) {
   const data = records.map(r => ({
-    '类型': r.type === 'expense' ? '支出' : '收入',
+    '交易时间': r.date,
+    '交易类型': r.category,
+    '收支': r.type === 'expense' ? '支出' : '收入',
     '金额': r.amount,
-    '分类': r.category,
-    '日期': r.date,
-    '备注': r.note,
+    '备注': r.note||'/',
   }))
   const workbook = XLSX.utils.book_new()
   const worksheet = XLSX.utils.json_to_sheet(data)
@@ -33,13 +33,13 @@ export function exportJson(records: BillRecord[], fileName: string) {
 
 // 导出CSV文件
 export function exportCsv(records: BillRecord[], fileName: string) {
-  const headers = ['类型', '金额', '分类', '日期', '备注']
+  const headers = ['交易时间', '交易类型', '收支', '金额', '备注']
   const rows = records.map(r => [
+    r.date,
+    r.category,
     r.type === 'expense' ? '支出' : '收入',
     r.amount,
-    r.category,
-    r.date,
-    r.note
+    r.note||'/',
   ])
   const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n')
   downloadBlob(csvContent, `${fileName}.csv`, 'text/csv')
