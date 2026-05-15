@@ -257,7 +257,12 @@ import dayjs from "dayjs";
 import { extractPlainText } from "@/utils/markdown";
 import { Edit, Delete, ArrowDown, Loading } from "@element-plus/icons-vue";
 import RecordEditDialog from "@/components/RecordEditDialog.vue";
+import { useErrorHandler } from "@/composables/useErrorHandler";
+import { useCategoriesStore } from "@/stores/categories";
 
+const { handleError } = useErrorHandler()
+
+const categoryStore = useCategoriesStore();
 const recordsStore = useRecordsStore();
 
 // --- 滚动与粘性头部状态 ---
@@ -473,42 +478,13 @@ const formatDate = (dateStr: string) => {
     return dayjs(dateStr).format("M月D日") + " " + "昨天";
   return dayjs(dateStr).format("M月D日");
 };
-//
-// /**
-//  * 格式化时间显示
-//  * @param timestamp 时间戳
-//  * @returns "HH:mm"
-//  */
-// const formatTime = (timestamp: number) => {
-//   return dayjs(timestamp).format("HH:mm");
-// };
-
-/**
- * 根据分类名称获取对应的 Element Plus 图标组件
- */
-// const getCategoryIcon = (category: string) => {
-//   const iconMap: Record<string, any> = {
-//     购物: ShoppingBag,
-//     餐饮: ForkSpoon,
-//     交通: Van,
-//     娱乐: Tickets,
-//     医疗: FirstAidKit,
-//     教育: Reading,
-//     红包: Present,
-//     其他: More,
-//     工资: Money,
-//     兼职: Coin,
-//     收款: Wallet,
-//   };
-//   return iconMap[category] || More;
-// };
 
 // 根据记录类型和分类名获取图标
 const getRecordIcon = (record: BillRecord) => {
   const categories =
     record.type === "expense"
-      ? recordsStore.expenseCategories
-      : recordsStore.incomeCategories;
+      ? categoryStore.expenseCategories
+      : categoryStore.incomeCategories;
   const found = categories.find((c) => c.name === record.category);
   return found?.icon || "More"; // 找不到就用默认图标
 };
@@ -540,17 +516,18 @@ const getDateIncome = (items: BillRecord[]) =>
 /**
  * 删除记录
  */
-const handleDelete = async (id: number) => {
+const handleDelete = async (id: string) => {
   try {
     recordsStore.deleteRecord(id);
-  } catch {
+  } catch (error) {
+    handleError(error)
     // 用户取消删除
   }
 };
 
 // --- 编辑功能逻辑 ---
 const editDialogVisible = ref(false);
-const editingId = ref<number | null>(null);
+const editingId = ref<string | null>(null);
 const editForm = reactive({
   type: "expense" as "expense" | "income",
   amount: 0,
@@ -561,11 +538,11 @@ const editForm = reactive({
 
 const editCategories = computed(() =>
   editForm.type === "expense"
-    ? recordsStore.expenseCategories
-    : recordsStore.incomeCategories,
+    ? categoryStore.expenseCategories
+    : categoryStore.incomeCategories,
 );
 
-const handleEdit = (id: number) => {
+const handleEdit = (id: string) => {
   const record = recordsStore.records.find((r) => r.id === id);
   if (!record) return;
   editingId.value = record.id;

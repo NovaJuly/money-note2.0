@@ -82,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed ,onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useUserStore } from "@/stores/user";
 import { ElMessageBox } from "element-plus";
@@ -95,7 +95,27 @@ import {
   Setting,
   SwitchButton,
 } from "@element-plus/icons-vue";
-import { isBackendOnline } from "@/api/request";
+import { isBackendOnline ,useServerStatus} from "@/composables/useServerStatus";
+import {useSyncEngine} from '@/composables/useSyncEngine'
+import { useErrorHandler } from "@/composables/useErrorHandler";
+import { useRecordsStore } from '@/stores/records'
+import { useCategoriesStore } from '@/stores/categories'
+const {sync} = useSyncEngine()
+
+const recordsStore = useRecordsStore()
+const categoriesStore = useCategoriesStore()
+
+onMounted(async () => {
+  await recordsStore.initLocalData()  // 从 IndexedDB 恢复数据
+  await categoriesStore.loadCategories()  // 从 IndexedDB 恢复分类数据
+  if (isBackendOnline.value) {
+    await sync()                        // ① 推送离线队列
+    await recordsStore.fetchFromServer() // ② 拉取全量，覆盖本地
+  }
+})
+useServerStatus()
+
+const { handleError } = useErrorHandler()
 
 const route = useRoute();
 const router = useRouter();
@@ -115,7 +135,8 @@ const handleLogout = async () => {
     });
     userStore.logout();
     router.push("/login");
-  } catch {
+  } catch (error) {
+    handleError(error)
     // 取消
   }
 };

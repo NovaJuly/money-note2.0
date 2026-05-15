@@ -254,6 +254,12 @@ import { CATEGORY_ICON_OPTIONS } from "@/utils/icons";
 import { useUserStore } from "@/stores/user";
 import { type WechatBill, parseWechatBill } from "@/utils/wechatBillParser";
 import { exportCsv, exportExcel, exportJson } from "@/utils/export";
+import { useErrorHandler } from '@/composables/useErrorHandler'
+import { useCategoriesStore } from '@/stores/categories'
+
+const categoryStore = useCategoriesStore()
+
+const { handleError } = useErrorHandler()
 
 const recordsStore = useRecordsStore();
 const userStore = useUserStore();
@@ -267,8 +273,8 @@ const showPreview = ref(false);
 const importing = ref(false);
 // 刷新数据
 const refreshData = async () => {
-  await recordsStore.loadRecords();
-  await categoriesApi.fetchCategories();
+  await recordsStore.fetchFromServer();
+  await categoryStore.loadCategories();
 };
 // 处理文件上传
 const handleFileChange = async (uploadFile: any) => {
@@ -283,7 +289,8 @@ const handleFileChange = async (uploadFile: any) => {
       selected: true,
     }));
   } catch (e: any) {
-    ElMessage.error(e.message || "解析失败");
+    // ElMessage.error(e.message || "解析失败");
+    handleError(e)
   } finally {
     showPreview.value = true;
   }
@@ -311,12 +318,14 @@ const confirmImport = async () => {
       showPreview.value = false;
       importedRecords.value = [];
       // 可选：刷新记录列表
-      await recordsStore.loadRecords();
+      await recordsStore.fetchFromServer();
     } else {
-      ElMessage.error(res.message || "导入失败");
+      // ElMessage.error(res.message || "导入失败");
+      handleError(res)
     }
   } catch (e: any) {
-    ElMessage.error(e.message || "导入失败");
+    // ElMessage.error(e.message || "导入失败");
+    handleError(e)
   } finally {
     importing.value = false;
   }
@@ -372,10 +381,12 @@ const getExportRecords = async () => {
     if (records.code === 10000) {
       return records.data || [];
     }
-    ElMessage.error(records.message || "导出失败");
+    // ElMessage.error(records.message || "导出失败");
+    handleError(records)
     return [];
   } catch (e: any) {
-    ElMessage.error(e.message || "导出失败");
+    // ElMessage.error(e.message || "导出失败");
+    handleError(e)
     return [];
   }
 };
@@ -438,8 +449,9 @@ const handleExportFromBackend = async () => {
     a.click();
     URL.revokeObjectURL(url);
     ElMessage.success('导出成功');
-  } catch {
-    ElMessage.error('导出失败');
+  } catch (e: any) {
+    // ElMessage.error('导出失败');
+    handleError(e)
   }
 }
 
@@ -456,17 +468,17 @@ const form = ref({
   icon: "MoreFilled",
 });
 // 从 store 获取分类
-const expenseCategories = computed(() => recordsStore.expenseCategories);
-const incomeCategories = computed(() => recordsStore.incomeCategories);
+const expenseCategories = computed(() => categoryStore.expenseCategories);
+const incomeCategories = computed(() => categoryStore.incomeCategories);
 const loading = ref(false);
 const isDefaultCategory = (id: number) => {
   return id <= 15;
 };
 // 初始化加载分类
 onMounted(async () => {
-  if (!recordsStore.categoriesLoaded) {
+  if (!categoryStore.loaded) {
     loading.value = true;
-    await recordsStore.loadCategories();
+    await categoryStore.loadCategories();
     loading.value = false;
   }
 });
@@ -508,20 +520,18 @@ const saveCategory = async () => {
   try {
     if (isEdit.value && editId.value) {
       await categoriesApi.updateCategory(editId.value, form.value);
-      ElMessage.success("分类已更新");
     } else {
       await categoriesApi.createCategory({
         ...form.value,
         type: currentType.value,
       });
-      ElMessage.success("分类已添加");
     }
     // 重新拉取最新分类列表
-    await recordsStore.loadCategories();
+    await categoryStore.loadCategories();
     dialogVisible.value = false;
+    ElMessage.success(isEdit.value ? "分类已更新" : "分类已添加");
   } catch (error: any) {
-    const message = error?.message || "操作失败";
-    ElMessage.error(message);
+    handleError(error);
   } finally {
     saving.value = false;
   }
@@ -544,9 +554,10 @@ const deleteCategory = async (id: number) => {
     try {
       await categoriesApi.deleteCategory(id);
       ElMessage.success("分类已删除");
-      await recordsStore.loadCategories();
+      await categoryStore.loadCategories();
     } catch (error: any) {
-      ElMessage.error(error?.message || "删除失败");
+      // ElMessage.error(error?.message || "删除失败");
+      handleError(error)
     }
   });
 };

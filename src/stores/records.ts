@@ -1,310 +1,247 @@
-import dayjs from "dayjs";
-import { defineStore } from "pinia";
-import { computed, ref } from "vue";
-import * as categoriesApi from "@/api/categories";
-import { ElMessage } from "element-plus";
-import * as recordsApi from "@/api/record";
+import { defineStore } from 'pinia'
+import { ref, computed ,toRaw} from 'vue'
+import dayjs from 'dayjs'
+import localforage from 'localforage'
+import { nanoid } from 'nanoid'
+import * as recordsApi from '@/api/record'
+import { ElMessage } from 'element-plus'
 
-// 记账记录类型
+// 共享的在线状态（由 useServerStatus 管理）
+import { isBackendOnline } from '@/composables/useServerStatus'
+
+// ---------- 本地存储实例 ----------
+const recordsLocal = localforage.createInstance({ name: 'moneyNoteRecords' })
+const pendingActionsLocal = localforage.createInstance({ name: 'pendingActions' })
+
+// ---------- 类型 ----------
 export interface BillRecord {
-  id: number;
-  type: "income" | "expense";
-  amount: number;
-  category: string;
-  date: string;
-  note: string;
-  createdAt: string;
+  id: string               // 统一为字符串
+  type: 'income' | 'expense'
+  amount: number
+  category: string
+  date: string
+  note: string
+  createdAt: string
+  synced: boolean          // 是否已与服务器同步
 }
 
-// 预设分类
-export interface CategoryItem {
-  id: number;
-  name: string;
-  icon: string;
-  type: "expense" | "income";
+export interface PendingAction {
+  id: string
+  type: 'create' | 'update' | 'delete'
+  payload: any
+  tempId?: string          // 新建记录时的临时ID
+  timestamp: number
 }
 
-export const EXPENSE_CATEGORIES: CategoryItem[] = [
-  { id: 1, name: "餐饮", icon: "Food", type: "expense" },
-  { id: 2, name: "交通", icon: "Place", type: "expense" },
-  { id: 3, name: "购物", icon: "ShoppingCart", type: "expense" },
-  { id: 4, name: "消费", icon: "Wallet", type: "expense" },
-  { id: 5, name: "娱乐", icon: "SwitchFilled", type: "expense" },
-  { id: 6, name: "医疗", icon: "Help", type: "expense" },
-  { id: 7, name: "教育", icon: "School", type: "expense" },
-  { id: 8, name: "转账", icon: "Present", type: "expense" },
-  { id: 9, name: "通讯", icon: "PhoneFilled", type: "expense" },
-  {
-    id: 10,
-    name: "其他",
-    icon: "More",
-    type: "expense",
-  },
-];
+export const useRecordsStore = defineStore('records', () => {
+  // ---------- 状态 ----------
+  const records = ref<BillRecord[]>([])
+  const loading = ref(false)
 
-// 默认收入分类
-export const INCOME_CATEGORIES: CategoryItem[] = [
-  { id: 11, name: "工资", icon: "Money", type: "income" },
-  { id: 12, name: "转账", icon: "Present", type: "income" },
-  { id: 13, name: "理财", icon: "TrendCharts", type: "income" },
-  { id: 14, name: "退款", icon: "Wallet", type: "income" },
-  { id: 15, name: "其他", icon: "More", type: "income" },
-];
-export const useRecordsStore = defineStore(
-  "records",
-  () => {
-    // 状态
-    const records = ref<BillRecord[]>([]);
+  // ---------- 初始化：从本地 IndexedDB 恢复记录 ----------
+  async function initLocalData() {
+    const cached = await recordsLocal.getItem<BillRecord[]>('records')
+    if (cached) records.value = cached
+  }
 
-    // 数据
-    // 总收入
-    const totalIncome = computed(() => {
-      return records.value
-        .filter((record) => record.type === "income")
-        .reduce((sum, record) => sum + record.amount, 0);
-    });
-    // 总支出
-    const totalExpense = computed(() => {
-      return records.value
-        .filter((record) => record.type === "expense")
-        .reduce((sum, record) => sum + (record.amount || 0), 0);
-    });
-    // 当月记录
-    const currentMonthRecords = computed(() => {
-      const now = dayjs();
-      return records.value.filter((record) =>
-        dayjs(record.date).isSame(now, "month"),
-      );
-    });
+  // ---------- 本地持久化辅助方法 ----------
+  async function persistRecords() {
+    await recordsLocal.setItem('records', toRaw(records.value))
+  }
 
-    // 当月总收入
-    const monthlyIncome = computed(() => {
-      return currentMonthRecords.value
-        .filter((record) => record.type === "income")
-        .reduce((sum, record) => sum + record.amount, 0);
-    });
+  // ---------- 离线队列管理 ----------
+  async function getPendingActions(): Promise<PendingAction[]> {
+    return (await pendingActionsLocal.getItem<PendingAction[]>('queue')) || []
+  }
 
-    // 当月总支出
-    const monthlyExpense = computed(() => {
-      return currentMonthRecords.value
-        .filter((record) => record.type === "expense")
-        .reduce((sum, record) => sum + (record.amount || 0), 0);
-    });
+  async function saveQueue(queue: PendingAction[]) {
+    await pendingActionsLocal.setItem('queue', toRaw(queue))
+  }
 
-    // 今日支出
-    const todayExpense = computed(() => {
-      const today = dayjs().format("YYYY-MM-DD");
-      const dateKey = dayjs(today).format("YYYY-MM-DD");
-      return records.value
-        .filter(
-          (record) =>
-            dayjs(record.date).format("YYYY-MM-DD") === dateKey &&
-            record.type === "expense",
-        )
-        .reduce((sum, record) => sum + (record.amount || 0), 0);
-    });
+  async function addPendingAction(action: Omit<PendingAction, 'id' | 'timestamp'>) {
+    const queue = await getPendingActions()
+    queue.push({ ...action, id: nanoid(), timestamp: Date.now() })
+    await saveQueue(queue)
+  }
 
-    // 当月结余
-    const monthlyBalance = computed(() => {
-      return monthlyIncome.value - monthlyExpense.value;
-    });
+  async function removePendingAction(actionId: string) {
+    const queue = await getPendingActions()
+    const newQueue = queue.filter(a => a.id !== actionId)
+    await saveQueue(newQueue)
+  }
 
-    // 按日期分组的记录（用于流水列表）
-    const groupedRecords = computed(() => {
-      const groups: Record<string, BillRecord[]> = {};
-      // 过滤掉没有 date 的记录（安全处理）
-      const valid = records.value.filter((r) => r && r.date);
+  // ---------- 记账记录操作 ----------
 
-      // 按 date 倒序排列
-      const sorted = [...valid].sort((a, b) => b.date.localeCompare(a.date));
+  /**
+   * 添加记录 (离线优先)
+   */
+  async function addRecord(record: Omit<BillRecord, 'id' | 'synced' | 'createdAt'>) {
+    const tempId = nanoid()
+    const newRecord: BillRecord = {
+      ...record,
+      id: tempId,
+      createdAt: dayjs().format(),
+      synced: false,
+    }
 
-      sorted.forEach((record) => {
-        const dateKey = dayjs(record.date).format("YYYY-MM-DD");
-        if (!groups[dateKey]) {
-          groups[dateKey] = [];
-        }
-        groups[dateKey]!.push(record);
-      });
-      // 返回 [date, records][] 数组，并按日期倒序排列
-      return Object.entries(groups).sort((a, b) => (a[0] < b[0] ? 1 : -1));
-    });
+    // 1. 立即更新本地数据
+    records.value.unshift(newRecord)
+    await persistRecords()
 
-    // 方法
-    // 添加记录
-    const addRecord = async (record: Omit<BillRecord, "id" | "createdAt">) => {
-      console.log(record);
-      // 金额强校验，防止非法字符串进入
-      const amount = Number(record.amount);
-      if (!isFinite(amount) || amount < 0) {
-        console.error("无效金额，拒绝添加", record.amount);
-        return;
-      }
-      // 构建请求体
-      const payload = {
-        ...record,
-        amount,
-        note: record.note || "",
-        createdAt: dayjs().format("YYYY-MM-DD HH:mm:ss"),
-      };
-      // 使用展开运算符确保触发响应式更新
-      // 调用API添加记录
+    // 2. 如果在线，尝试调用后端；否则/失败则加入离线队列
+    if (isBackendOnline.value) {
       try {
-        const res = await recordsApi.createRecord(payload);
-        console.log(res);
-
+        const res = await recordsApi.createRecord(record)
         if (res.code === 10000) {
-          records.value.unshift(res.data);
-          ElMessage.success("添加成功");
+          const idx = records.value.findIndex(r => r.id === tempId)
+          if (idx !== -1) {
+            const record = records.value[idx]
+            if (record) {
+              // 替换为服务器ID
+              record.id = String(res.data.id)
+              record.synced = true
+              await persistRecords()
+            }
+            await persistRecords()
+          }
         } else {
-          ElMessage.error(res.message || "添加失败");
+          ElMessage.error(res.message || '添加失败')
         }
-      } catch (e: any) {
-        console.error("添加记录失败", e);
-        ElMessage.error(e.message || "添加记录失败");
+      } catch {
+        // 网络错误，加入待同步队列
+        await addPendingAction({ type: 'create', payload: record, tempId })
       }
-    };
-    // 获取所有记录
-    const loadRecords = async () => {
+    } else {
+      // 离线状态，直接入队
+      await addPendingAction({ type: 'create', payload: record, tempId })
+    }
+  }
+
+  /**
+   * 删除记录
+   */
+  async function deleteRecord(id: string) {
+    const record = records.value.find(r => r.id === id)
+    if (!record) return
+
+    // 乐观删除本地
+    records.value = records.value.filter(r => r.id !== id)
+    await persistRecords()
+
+    // 如果是纯本地记录且未同步，直接删除即可
+    if (!record.synced && id.startsWith('temp_')) return
+
+    if (isBackendOnline.value) {
       try {
-        const res = await recordsApi.fetchRecords();
-        if (res.code === 10000) {
-          records.value = res.data;
-        } else {
-          ElMessage.error(res.message || "获取记录失败");
-        }
-      } catch (e: any) {
-        console.error("获取记录失败", e);
-        ElMessage.error(e.message || "获取记录失败");
+        await recordsApi.deleteRecord(id)
+      } catch {
+        await addPendingAction({ type: 'delete', payload: { id } })
       }
-    };
-    // 删除记录
-    const deleteRecord = async (id: number) => {
-      const index = records.value.findIndex((record) => record.id === id);
-      if (index !== -1) {
-        try {
-          const res = await recordsApi.deleteRecord(id);
-          if (res.code === 10000) {
-            records.value.splice(index, 1);
-            ElMessage.success("删除成功");
-          } else {
-            ElMessage.error(res.message || "删除失败");
-          }
-        } catch (e: any) {
-          console.error("删除记录失败", e);
-          ElMessage.error(e.message || "删除记录失败");
-        }
-      }
-    };
-    // 更新记录
-    const updateRecord = async (id: number, updates: Partial<BillRecord>) => {
-      const record = records.value.find((record) => record.id === id);
-      if (record) {
-        // 金额校验
-        if (updates.amount !== undefined) {
-          const amount = Number(updates.amount);
-          if (!isFinite(amount) || amount < 0) {
-            console.error("无效金额，拒绝更新", updates.amount);
-            return;
-          }
-        }
-        try {
-          const res = await recordsApi.updateRecord(id, updates);
-          if (res.code === 10000) {
-            Object.assign(record, updates);
-            ElMessage.success("更新成功");
-          } else {
-            ElMessage.error(res.message || "更新失败");
-          }
-        } catch (e: any) {
-          console.error("更新记录失败", e);
-          ElMessage.error(e.message || "更新记录失败");
-        }
-      }
-    };
+    } else {
+      await addPendingAction({ type: 'delete', payload: { id } })
+    }
+  }
 
-    // ---- 分类状态 ----
-    const expenseCategories = ref<CategoryItem[]>([...EXPENSE_CATEGORIES]);
-    const incomeCategories = ref<CategoryItem[]>([...INCOME_CATEGORIES]);
-    const categoriesLoaded = ref(false);
+  /**
+   * 更新记录
+   */
+  async function updateRecord(id: string, changes: Partial<BillRecord>) {
+    const record = records.value.find(r => r.id === id)
+    if (!record) return
 
-    const loadCategories = async () => {
-      let res;
+    // 乐观更新本地
+    Object.assign(record, changes)
+    record.synced = false
+    await persistRecords()
+
+    if (isBackendOnline.value) {
       try {
-        res = await categoriesApi.fetchCategories();
-        console.log(res);
-
-        if (res.code === 10000) {
-          const all = res.data.filter((c) => c && c.name);
-          const exps = all.filter((c) => c.type === "expense");
-          const incs = all.filter((c) => c.type === "income");
-          if (exps.length > 0) {
-            expenseCategories.value = exps;
-          }
-          if (incs.length > 0) {
-            incomeCategories.value = incs;
-          }
-          categoriesLoaded.value = true;
-        }
-      } catch (e) {
-        console.log(res);
-        console.warn("加载分类失败，可降级使用缓存", e);
+        await recordsApi.updateRecord(id, changes)
+        record.synced = true
+        await persistRecords()
+      } catch {
+        await addPendingAction({ type: 'update', payload: { id, changes } })
       }
-    };
+    } else {
+      await addPendingAction({ type: 'update', payload: { id, changes } })
+    }
+  }
 
-    // 添加分类（调用后端接口，成功后刷新）
-    const addCategory = async (
-      type: "expense" | "income",
-      name: string,
-      icon: string = "MoreFilled",
-    ) => {
-      try {
-        await categoriesApi.createCategory({ name, icon, type });
-        await loadCategories(); // 重新拉取最新列表
-        console.log();
-      } catch (error: any) {
-        ElMessage.error(error.message || "添加失败");
+  /**
+   * 从服务器拉取全量记录并合并（保留未同步的本地记录）
+   */
+  async function fetchFromServer() {
+    try {
+      const res = await recordsApi.fetchRecords()
+      if (res.code === 10000) {
+        const serverRecords: BillRecord[] = res.data.map((r: any) => ({
+          ...r,
+          id: String(r.id),
+          synced: true,
+        }))
+        // 保留本地尚未同步的记录，它们还没上传
+        // const localUnsynced = records.value.filter(r => !r.synced)
+        records.value = serverRecords
+        await persistRecords()
       }
-    };
-    // 删除分类
-    const deleteCategory = async (id: number) => {
-      try {
-        await categoriesApi.deleteCategory(id);
-        await loadCategories();
-        ElMessage.success("删除成功");
-      } catch (error: any) {
-        ElMessage.error(error.message || "删除失败");
-      }
-    };
+    } catch (e) {
+      console.warn('拉取服务器记录失败', e)
+    }
+  }
 
-    return {
-      records,
-      currentMonthRecords,
-      totalIncome,
-      totalExpense,
-      monthlyIncome,
-      monthlyExpense,
-      todayExpense,
-      monthlyBalance,
-      groupedRecords,
-      addRecord,
-      deleteRecord,
-      updateRecord,
+  // ---------- 计算属性 ----------
+  const groupedRecords = computed(() => {
+  const groups: Record<string, BillRecord[]> = {}
+  const valid = records.value.filter(r => r && r.date)
+  const sorted = [...valid].sort((a, b) => b.date.localeCompare(a.date))
+  sorted.forEach(record => {
+    const dateKey = dayjs(record.date).format('YYYY-MM-DD')
+    if (!groups[dateKey]) groups[dateKey] = []
+    groups[dateKey].push(record)
+  })
+  return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]))
+})
+  const currentMonthRecords = computed(() => {
+    const now = dayjs()
+    return records.value.filter(r => dayjs(r.date).isSame(now, 'month'))
+  })
 
-      categoriesLoaded,
-      expenseCategories,
-      incomeCategories,
-      loadRecords,
-      addCategory,
-      deleteCategory,
-      loadCategories,
-    };
-  },
-  {
-    // persist: false as any
-    persist: {
-      key: "records-store",
-      storage: localStorage,
-      paths: ["records"],
-    } as any,
-  },
-);
+  const monthlyIncome = computed(() =>
+    currentMonthRecords.value
+      .filter(r => r.type === 'income')
+      .reduce((sum, r) => sum + r.amount, 0)
+  )
+
+  const monthlyExpense = computed(() =>
+    currentMonthRecords.value
+      .filter(r => r.type === 'expense')
+      .reduce((sum, r) => sum + r.amount, 0)
+  )
+
+  const todayExpense = computed(() => {
+    const today = dayjs().format('YYYY-MM-DD')
+    return records.value
+      .filter(r => dayjs(r.date).format('YYYY-MM-DD') === today && r.type === 'expense')
+      .reduce((sum, r) => sum + r.amount, 0)
+  })
+
+  // ---------- 导出 ----------
+  return {
+    records,
+    loading,
+    addRecord,
+    deleteRecord,
+    updateRecord,
+    initLocalData,
+    fetchFromServer,
+    getPendingActions,
+    removePendingAction,
+    persistRecords,
+    // 计算属性
+    groupedRecords,
+    currentMonthRecords,
+    monthlyIncome,
+    monthlyExpense,
+    todayExpense,
+  }
+})

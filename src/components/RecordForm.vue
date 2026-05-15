@@ -91,6 +91,12 @@ import { useThrottleFn } from "@vueuse/core";
 import MarkdownEditor from "@/components/MarkdownEditor.vue";
 import { onMounted } from 'vue'
 const addLoading = ref(false)
+import { useErrorHandler } from "@/composables/useErrorHandler";
+import { useCategoriesStore } from "@/stores/categories";
+
+const categoryStore = useCategoriesStore();
+
+const { handleError } = useErrorHandler()
 
 const recordsStore = useRecordsStore();
 
@@ -105,13 +111,9 @@ const form = reactive({
 // 根据类型动态切换分类列表
 const categories = computed(() => {
   return form.type === "expense"
-  ? recordsStore.expenseCategories
-  : recordsStore.incomeCategories;
+  ? categoryStore.expenseCategories
+  : categoryStore.incomeCategories;
 });
-// onMounted(() => {
-//   console.log('当前支出分类:', recordsStore.expenseCategories)
-//   console.log('当前收入分类:', recordsStore.incomeCategories)
-// })
 // 类型切换时重置分类
 watch(
   () => form.type,
@@ -156,8 +158,7 @@ const handleAdd = async () => {
     form.amount = 0;
     form.note = "";
   } catch (error) {
-    console.error("Form: Error adding record", error);
-    ElMessage.error("添加失败，请查看控制台错误信息");
+    handleError(error)
   } finally {
     addLoading.value = false
   }

@@ -105,6 +105,10 @@ import { useUserStore } from "@/stores/user";
 import AuthLayout from "@/components/AuthLayout.vue";
 import { useThrottleFn, useDebounceFn } from "@vueuse/core";
 import bgImage from "@/assets/bg.png";
+import { useErrorHandler } from '@/composables/useErrorHandler'
+const { handleError } = useErrorHandler()
+
+
 
 const router = useRouter();
 const userStore = useUserStore();
@@ -204,7 +208,8 @@ const doRegister = async () => {
       ElMessage.success(result.message);
       router.push("/login");
     } else {
-      ElMessage.error(result.message);
+      // ElMessage.error(result.message);
+      handleError(result)
     }
   });
 };

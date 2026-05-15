@@ -5,7 +5,7 @@
       <StatsCard
         :monthlyIncome="recordsStore.monthlyIncome"
         :monthlyExpense="recordsStore.monthlyExpense"
-        :monthlyBalance="recordsStore.monthlyBalance"
+        :monthlyBalance="recordsStore.monthlyIncome - recordsStore.monthlyExpense"
       />
 
       <!-- 快捷入口 -->

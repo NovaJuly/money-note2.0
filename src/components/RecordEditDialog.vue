@@ -8,6 +8,8 @@
 import { ref, reactive, watch, computed } from "vue";
 import { useRecordsStore, type BillRecord } from "@/stores/records";
 import MarkdownEditor from "./MarkdownEditor.vue";
+import { useCategoriesStore } from "@/stores/categories";
+const categoryStore = useCategoriesStore();
 
 const props = withDefaults(defineProps<{
   modelValue: boolean;
@@ -24,8 +26,8 @@ const loading = ref(false);
 
 const categories = computed(() => {
   return form.type === "income"
-    ? recordsStore.incomeCategories
-    : recordsStore.expenseCategories;
+    ? categoryStore.incomeCategories
+    : categoryStore.expenseCategories;
 });
 
 const defaultForm = (record: BillRecord | null) => ({

@@ -94,6 +94,10 @@ import AuthLayout from "@/components/AuthLayout.vue";
 import { useThrottleFn, useDebounceFn } from "@vueuse/core";
 import bgImage from "@/assets/bg.png";
 import { useRecordsStore } from "@/stores/records";
+import { useErrorHandler } from '@/composables/useErrorHandler'
+const { handleError } = useErrorHandler()
+import { useCategoriesStore } from "@/stores/categories";
+const categoryStore = useCategoriesStore();
 
 const recordsStore = useRecordsStore();
 
@@ -184,8 +188,8 @@ const doLogin = async () => {
       // ✨ 登录成功后立即同步账单和分类数据
       try {
         await Promise.all([
-          recordsStore.loadRecords(),
-          recordsStore.loadCategories(),
+          recordsStore.fetchFromServer(),
+          categoryStore.loadCategories(),
         ])
         console.log("登录成功后立即同步账单和分类数据")
       } catch (e) {
@@ -193,7 +197,8 @@ const doLogin = async () => {
       }
       router.push("/dashboard");
     } else {
-      ElMessage.error(result.message);
+      // ElMessage.error(result.message);
+      handleError(result)
       refreshCaptcha();
     }
     console.log("登录结果", result);

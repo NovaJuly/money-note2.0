@@ -36,9 +36,7 @@ export const useUserStore = defineStore(
         saveStoredUsers(users);
       }
     };
-    /* 
-      本地存储逻辑(离线模式)
-     */
+    // 本地存储逻辑(离线模式)
     const getStoredUsers = (): Record<
       string,
       { password: string; user: User }
@@ -148,16 +146,33 @@ export const useUserStore = defineStore(
           };
         }
       } catch (error: any) {
-        // 情况1：是 axios 错误，并且有服务器响应（HTTP 状态码 4xx/5xx）
-        if (axios.isAxiosError(error) && error.response) {
-          // 后端返回了错误，从 error.response.data 取出后端信息
-          const data = error.response.data || {};
+        // 1. 如果是 Axios 网络错误，或者拦截器包装后的离线错误（code === 999），直接降级
+        if (axios.isAxiosError(error) && !error.response) {
+          console.warn("后端 API 不可用，切换到本地验证");
+          return localLogin(username, password);
+        }
+
+        // 2. 如果是后端返回的 5xx（502/503）等，也应该降级（后端不可用）
+        if (error?.response?.status >= 500) {
+          console.warn("后端服务异常，切换到本地验证");
+          return localLogin(username, password);
+        }
+
+        // 3. 如果拦截器把网络错误包装成了 { code: 999, message: '...' }
+        if (error && error.code === 999) {
+          console.warn("后端不可用（包装错误），切换到本地验证");
+          return localLogin(username, password);
+        }
+
+        // 4. 其他任何有 response 的 HTTP 错误（4xx 等），不降级，展示后端消息
+        if (error?.response?.data) {
+          const data = error.response.data;
           return { success: false, message: data.message || "请求失败" };
         }
-        // 情况2：axios 错误，但没有响应（网络不通、超时、跨域等）
-        // 或者不是 axios 错误
-        console.warn("后端 API 不可用，切换到本地验证", error);
-        return localLogin(username, password); // 或 localRegister
+
+        // 5. 最终兜底：也降级
+        console.warn("未知错误，尝试本地登录", error);
+        return localLogin(username, password);
       }
     };
 

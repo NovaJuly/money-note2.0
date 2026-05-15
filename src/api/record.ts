@@ -3,7 +3,7 @@ import type { WechatBill } from "@/utils/wechatBillParser";
 
 // 记账记录类型
 export interface BillRecord {
-  id: number;
+  id: string;
   type: "income" | "expense";
   amount: number;
   category: string;
@@ -29,11 +29,11 @@ export const createRecord = (data: Omit<BillRecord, 'id' | 'createdAt'>) => {
   return http.post<ApiResponse<BillRecord>>('/records', data)
 }
 // 更新
-export const updateRecord = (id: number, data: Partial<BillRecord>) => {
+export const updateRecord = (id: string, data: Partial<BillRecord>) => {
   return http.put<ApiResponse<BillRecord>>(`/records/${id}`, data)
 }
 // 删除
-export const deleteRecord = (id: number) => {
+export const deleteRecord = (id: string) => {
   return http.delete<ApiResponse<void>>(`/records/${id}`)
 }
 export const importRecords = (records: WechatBill[]) => {

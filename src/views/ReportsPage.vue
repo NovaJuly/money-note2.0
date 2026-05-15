@@ -387,9 +387,9 @@ let pieChart: echarts.ECharts | null = null;
 let barChart: echarts.ECharts | null = null;
 
 const barChartTitle = computed(() => {
-  if (activeTab.value === "week") return "周收支对比（本周 vs 前4周）";
-  if (activeTab.value === "month") return "月收支对比（本月 vs 前6月）";
-  if (activeTab.value === "year") return "年收支对比（今年 vs 前5年）";
+  if (activeTab.value === "week") return "周收支对比";
+  if (activeTab.value === "month") return "月收支对比";
+  if (activeTab.value === "year") return "年收支对比";
   return "收支对比";
 });
 const loadCharts = () => {
