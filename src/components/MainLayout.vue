@@ -96,7 +96,7 @@ import {
   SwitchButton,
 } from "@element-plus/icons-vue";
 import { isBackendOnline ,useServerStatus} from "@/composables/useServerStatus";
-import {useSyncEngine} from '@/composables/useSyncEngine'
+import {useSyncEngine,useAutoRelogin} from '@/composables/useSyncEngine'
 import { useErrorHandler } from "@/composables/useErrorHandler";
 import { useRecordsStore } from '@/stores/records'
 import { useCategoriesStore } from '@/stores/categories'
@@ -105,6 +105,7 @@ const {sync} = useSyncEngine()
 const recordsStore = useRecordsStore()
 const categoriesStore = useCategoriesStore()
 
+useAutoRelogin()
 onMounted(async () => {
   await recordsStore.initLocalData()  // 从 IndexedDB 恢复数据
   await categoriesStore.loadCategories()  // 从 IndexedDB 恢复分类数据
@@ -136,8 +137,6 @@ const handleLogout = async () => {
     userStore.logout();
     router.push("/login");
   } catch (error) {
-    handleError(error)
-    // 取消
   }
 };
 </script>

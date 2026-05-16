@@ -16,6 +16,8 @@ const DEMO_USER: User = {
 };
 const DEMO_PASSWORD = "123456";
 
+const offlineCredentials=ref<{username:string,password:string} | null>(null)
+
 export const useUserStore = defineStore(
   "user",
   () => {
@@ -111,7 +113,8 @@ export const useUserStore = defineStore(
         return { success: false, message: "密码错误" };
       }
 
-      // 登录成功，设置状态
+      // 登录成功，设置状态和离线凭证
+      offlineCredentials.value={username,password}
       token.value = `token-local-${Date.now()}-${username}`;
       currentUser.value = userRecord.user;
 
@@ -211,6 +214,7 @@ export const useUserStore = defineStore(
     const logout = () => {
       token.value = null;
       currentUser.value = null;
+      offlineCredentials.value=null
     };
 
     // 初始化时确保演示账号存在
@@ -221,6 +225,7 @@ export const useUserStore = defineStore(
       token,
       currentUser,
       isLoggedIn,
+      offlineCredentials,
 
       // 方法
       localRegister,

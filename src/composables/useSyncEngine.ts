@@ -2,6 +2,8 @@ import { watch, onMounted, onUnmounted } from "vue";
 import { isBackendOnline } from "./useServerStatus";
 import { useRecordsStore } from "@/stores/records";
 import * as recordsApi from "@/api/record";
+import { useUserStore } from "@/stores/user";
+import { ElMessage } from "element-plus";
 
 let syncing = false;
 
@@ -76,8 +78,9 @@ export function useSyncEngine() {
     }
   };
 
+  
   // 监听在线状态变化
-  watch(isBackendOnline, (online) => {
+  watch(isBackendOnline, async(online) => {
     if (online) sync();
   });
 
@@ -105,4 +108,32 @@ export function useSyncEngine() {
   });
 
   return { sync };
+}
+export function useAutoRelogin() {
+  const userStore = useUserStore()
+
+  watch(isBackendOnline, async (online) => {
+    if (!online) return
+    if (!userStore.token?.startsWith('token-local-')) return
+
+    const cred = userStore.offlineCredentials // 需在 store 中暴露
+    if (!cred) {
+      ElMessage.warning('服务器已恢复，请手动重新登录以同步数据')
+      return
+    }
+
+    try {
+      const res = await userStore.login(cred.username, cred.password)
+      if (res.success) {
+        ElMessage.success('已自动重新登录，开始同步离线数据')
+        // 清除临时凭证
+        userStore.offlineCredentials=null
+        // 手动触发同步（或由 syncEngine 的 watch 自动触发）
+      } else {
+        ElMessage.error('自动登录失败，请手动登录')
+      }
+    } catch {
+      ElMessage.error('自动登录失败，请手动登录')
+    }
+  })
 }

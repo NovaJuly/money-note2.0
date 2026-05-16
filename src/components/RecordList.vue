@@ -40,6 +40,7 @@
         <div v-if="filteredDisplayRecords.length === 0" class="empty-state">
           <el-empty description="暂无账单数据" />
         </div>
+
         <div v-else class="record-groups">
           <template
             v-for="([date, records], index) in filteredDisplayRecords"
@@ -174,7 +175,7 @@
               v-for="cat in editCategories"
               :key="cat.id"
               :label="cat.name"
-              :value="cat.id"
+              :value="cat.name"
             />
           </el-select>
         </el-form-item>
@@ -189,8 +190,7 @@
           />
         </el-form-item>
         <RecordEditDialog
-          v-model="editDialogVisible"
-          :record="editingRecord"
+          v-model:note="editForm.note"
           :maxlength="100"
         />
       </el-form>
@@ -521,7 +521,6 @@ const handleDelete = async (id: string) => {
     recordsStore.deleteRecord(id);
   } catch (error) {
     handleError(error)
-    // 用户取消删除
   }
 };
 
@@ -532,7 +531,7 @@ const editForm = reactive({
   type: "expense" as "expense" | "income",
   amount: 0,
   category: "",
-  date: "",
+  date: dayjs().format("YYYY-MM-DD HH:mm:ss"),
   note: "",
 });
 
@@ -550,6 +549,7 @@ const handleEdit = (id: string) => {
   editForm.amount = record.amount;
   editForm.category = record.category;
   editForm.date = record.date;
+  editForm.note = record.note || "";
   editDialogVisible.value = true;
 };
 
@@ -557,10 +557,14 @@ const handleSaveEdit = () => {
   if (!editingId.value) {
     return;
   }
-  recordsStore.updateRecord(editingId.value, {
-    ...editForm,
-    note: extractPlainText(editForm.note), // 同步更新纯文本摘要
-  });
+  const changes = {
+    type: editForm.type,
+    amount: editForm.amount,
+    category: editForm.category,
+    date: editForm.date,
+    note: editForm.note,
+  };
+  recordsStore.updateRecord(editingId.value, changes);
   editDialogVisible.value = false;
   ElMessage.success("修改成功");
 };

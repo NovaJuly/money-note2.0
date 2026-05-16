@@ -42,7 +42,7 @@
                 :label="cat.name"
                 :value="cat.name"
               >
-                <el-icon><component :is="cat.icon || 'More'"/></el-icon>
+                <el-icon><component :is="cat.icon || 'More'" /></el-icon>
                 <span style="margin-left: 8px">{{ cat.name }}</span>
               </el-option>
             </el-select>
@@ -63,6 +63,18 @@
           </el-form-item>
         </el-col>
       </el-row>
+      <!-- 时间 -->
+      <el-col :xs="24" :sm="6">
+        <el-form-item label="时间">
+          <el-time-picker
+            v-model="form.time"
+            placeholder="选择时间"
+            format="HH:mm:ss"
+            value-format="HH:mm:ss"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-col>
 
       <!-- 备注（Markdown） -->
       <el-form-item label="备注">
@@ -87,16 +99,15 @@ import { ref, computed, reactive, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRecordsStore } from "@/stores/records";
 import dayjs from "dayjs";
-import { useThrottleFn } from "@vueuse/core";
 import MarkdownEditor from "@/components/MarkdownEditor.vue";
-import { onMounted } from 'vue'
-const addLoading = ref(false)
+import { onMounted } from "vue";
+const addLoading = ref(false);
 import { useErrorHandler } from "@/composables/useErrorHandler";
 import { useCategoriesStore } from "@/stores/categories";
 
 const categoryStore = useCategoriesStore();
 
-const { handleError } = useErrorHandler()
+const { handleError } = useErrorHandler();
 
 const recordsStore = useRecordsStore();
 
@@ -104,15 +115,22 @@ const form = reactive({
   type: "expense" as "income" | "expense",
   amount: 0,
   category: "",
-  date: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+  date: dayjs().format("YYYY-MM-DD"),
+  time: dayjs().format("HH:mm:ss"),
   note: "",
+  createdAt: dayjs().format("YYYY-MM-DD HH:mm:ss"),
+});
+// 最终提交时，合并为完整时间字符串
+const submitDate = computed(() => {
+  if (!form.date || !form.time) return "";
+  return `${form.date} ${form.time}`;
 });
 
 // 根据类型动态切换分类列表
 const categories = computed(() => {
   return form.type === "expense"
-  ? categoryStore.expenseCategories
-  : categoryStore.incomeCategories;
+    ? categoryStore.expenseCategories
+    : categoryStore.incomeCategories;
 });
 // 类型切换时重置分类
 watch(
@@ -132,8 +150,6 @@ const handleEditWheel = (e: WheelEvent) => {
 };
 
 const handleAdd = async () => {
-
-  console.log("Form: handleAdd called", { ...form });
   if (!form.category) {
     ElMessage.warning("请选择分类");
     return;
@@ -143,24 +159,26 @@ const handleAdd = async () => {
     ElMessage.warning("金额格式不正确");
     return;
   }
-    // 防止重复点击
-  if (addLoading.value) return
-  addLoading.value = true
+  // 防止重复点击
+  if (addLoading.value) return;
+  addLoading.value = true;
   try {
     await recordsStore.addRecord({
       type: form.type,
       amount: safeAmount,
       category: form.category,
-      date: form.date,
+      date: submitDate.value,
       note: form.note,
     });
+    console.log("Form: handleAdd called", { ...form });
     // 重置金额，保留类型、分类、日期（可保留最近使用的分类）
     form.amount = 0;
     form.note = "";
+    ElMessage.success("记录添加成功");
   } catch (error) {
-    handleError(error)
+    handleError(error);
   } finally {
-    addLoading.value = false
+    addLoading.value = false;
   }
 };
 </script>
