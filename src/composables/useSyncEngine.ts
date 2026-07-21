@@ -25,7 +25,7 @@ export function useSyncEngine() {
         try {
           switch (action.type) {
             case "create": {
-              // 注意：payload 是原始 record 对象，不包含 id/createdAt
+              // 注意：payload 是原始 record 对象，不包含 id
               const res = await recordsApi.createRecord(action.payload);
               if (res.code === 10000 && action.tempId) {
                 // 替换临时 ID，标记已同步

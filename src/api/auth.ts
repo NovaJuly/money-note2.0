@@ -9,10 +9,7 @@ export interface LoginResponse {
   code: number
   data: {
     token: string
-    user: {
-      username: string
-      createdAt: string
-    }
+    username: string
   }
   message: string
 }

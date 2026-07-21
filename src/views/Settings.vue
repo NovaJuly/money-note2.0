@@ -4,12 +4,8 @@
       <!-- 账号管理 -->
       <el-tab-pane label="账号管理" name="account">
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="用户名">{{
-            userStore.currentUser?.username
-          }}</el-descriptions-item>
-          <el-descriptions-item label="注册时间">{{
-            userStore.currentUser?.createdAt
-          }}</el-descriptions-item>
+          <el-descriptions-item label="用户名">
+            {{userStore.currentUser?.username}}</el-descriptions-item>
         </el-descriptions>
         <el-button type="primary" @click="refreshData">强制刷新数据</el-button>
       </el-tab-pane>

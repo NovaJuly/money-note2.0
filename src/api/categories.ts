@@ -6,7 +6,6 @@ export interface CategoryItem {
   name: string
   icon: string
   type: 'expense' | 'income'
-  createdAt?: string
 }
 // 通用业务响应格式
 interface ApiResponse<T> {

@@ -23,7 +23,6 @@ export interface BillRecord {
   category: string;
   date: string;
   note: string;
-  createdAt: string;
   synced: boolean; // 是否已与服务器同步
 }
 
@@ -80,12 +79,11 @@ export const useRecordsStore = defineStore("records", () => {
   /**
    * 添加记录 (离线优先)
    */
-  async function addRecord(record: Omit<BillRecord, "id" | "synced" | "createdAt">) {
+  async function addRecord(record: Omit<BillRecord, "id" | "synced" >) {
     const tempId = nanoid();
     const newRecord: BillRecord = {
       ...record,
       id: tempId,
-      createdAt: dayjs().format("YYYY-MM-DD HH:mm:ss"),
       synced: false,
     };
 
@@ -201,7 +199,6 @@ export const useRecordsStore = defineStore("records", () => {
         const serverRecords: BillRecord[] = res.data.map((r: any) => ({
           ...r,
           id: String(r.id),
-          createdAt: dayjs(r.createAt).valueOf(),
           synced: true,
         }));
         // 保留本地尚未同步的记录，它们还没上传
@@ -217,7 +214,7 @@ export const useRecordsStore = defineStore("records", () => {
   // ---------- 计算属性 ----------
   const groupedRecords = computed(() => {
     const groups: Record<string, BillRecord[]> = {};
-    // 按 createdAt 数字时间戳倒序排列
+    // 按 date 数字时间戳倒序排列
     const sorted = [...records.value].sort((a, b) => {
       const timeA =
         typeof a.date === "number" ? a.date : dayjs(a.date).valueOf();

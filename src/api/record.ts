@@ -9,7 +9,6 @@ export interface BillRecord {
   category: string;
   date: string;
   note: string;
-  createdAt: string;
 }
 // 通用业务响应格式
 interface ApiResponse<T> {
@@ -25,7 +24,7 @@ export const fetchRecords = (params?: {
   return http.get<ApiResponse<BillRecord[]>>('/records', { params })
 }
 // 新增
-export const createRecord = (data: Omit<BillRecord, 'id' | 'createdAt'>) => {
+export const createRecord = (data: Omit<BillRecord, 'id'>) => {
   return http.post<ApiResponse<BillRecord>>('/records', data)
 }
 // 更新

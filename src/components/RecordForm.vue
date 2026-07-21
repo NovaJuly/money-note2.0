@@ -118,7 +118,6 @@ const form = reactive({
   date: dayjs().format("YYYY-MM-DD"),
   time: dayjs().format("HH:mm:ss"),
   note: "",
-  createdAt: dayjs().format("YYYY-MM-DD HH:mm:ss"),
 });
 // 最终提交时，合并为完整时间字符串
 const submitDate = computed(() => {
