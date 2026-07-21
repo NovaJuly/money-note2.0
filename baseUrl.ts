@@ -1,1 +1,1 @@
-export const baseUrl = 'http://localhost:8080'
+export const baseUrl = 'https://1uy27496vu458.vicp.fun'

@@ -160,13 +160,13 @@
               :loading="importing"
               @click="confirmImport"
             >
-              确认导入 {{ importedRecords.length }} 条记录
+              确认导入 {{ selected.length }} 条记录
             </el-button>
             <el-button @click="cancelPreview">取消</el-button>
           </div>
         </el-card>
       </el-tab-pane>
-      <!-- 前端式数据导出 -->
+      <!-- 数据导出 -->
       <el-tab-pane label="数据导出" name="export">
         <el-card header="导出数据" style="margin-top: 16px">
           <div class="export-options">
@@ -190,21 +190,35 @@
             />
             <!-- 导出按钮 -->
             <div class="export-buttons">
-              <el-button @click="handleExport('xlsx')" :loading="exportLoading"
-    :disabled="exportLoading">
+              <el-button
+                @click="handleExport('xlsx')"
+                :loading="exportLoading"
+                :disabled="exportLoading"
+              >
                 导出 Excel
               </el-button>
-              <el-button @click="handleExport('json')" :loading="exportLoading"
-    :disabled="exportLoading">导出 JSON</el-button>
-              <el-button @click="handleExport('csv')" :loading="exportLoading"
-    :disabled="exportLoading">导出 CSV</el-button>
-              <el-button @click="handleExportFromBackend" :loading="exportLoading"
-    :disabled="exportLoading">导出Excel(后端式)</el-button>
+              <el-button
+                @click="handleExport('json')"
+                :loading="exportLoading"
+                :disabled="exportLoading"
+                >导出 JSON</el-button
+              >
+              <el-button
+                @click="handleExport('csv')"
+                :loading="exportLoading"
+                :disabled="exportLoading"
+                >导出 CSV</el-button
+              >
+              <el-button
+                @click="handleExportFromBackend"
+                :loading="exportLoading"
+                :disabled="exportLoading"
+                >导出Excel(后端式)</el-button
+              >
             </div>
           </div>
         </el-card>
       </el-tab-pane>
-      <!-- 后端式数据导出 -->
     </el-tabs>
 
     <!-- 添加/编辑分类对话框 -->
@@ -254,28 +268,28 @@ import { CATEGORY_ICON_OPTIONS } from "@/utils/icons";
 import { useUserStore } from "@/stores/user";
 import { type WechatBill, parseWechatBill } from "@/utils/wechatBillParser";
 import { exportCsv, exportExcel, exportJson } from "@/utils/export";
-import { useErrorHandler } from '@/composables/useErrorHandler'
-import { useCategoriesStore } from '@/stores/categories'
+import { useErrorHandler } from "@/composables/useErrorHandler";
+import { useCategoriesStore } from "@/stores/categories";
 
-const categoryStore = useCategoriesStore()
+const categoryStore = useCategoriesStore();
 
-const { handleError } = useErrorHandler()
+const { handleError } = useErrorHandler();
 
 const recordsStore = useRecordsStore();
 const userStore = useUserStore();
 // 标签页
 const activeTab = ref("account");
+// 刷新数据
+const refreshData = async () => {
+  await recordsStore.fetchFromServer();
+  await categoryStore.loadCategories();
+};
 
 /** 导入相关代码,至314行
  */
 const importedRecords = ref<{ record: WechatBill; selected: boolean }[]>([]);
 const showPreview = ref(false);
 const importing = ref(false);
-// 刷新数据
-const refreshData = async () => {
-  await recordsStore.fetchFromServer();
-  await categoryStore.loadCategories();
-};
 // 处理文件上传
 const handleFileChange = async (uploadFile: any) => {
   const file = uploadFile.raw;
@@ -290,18 +304,18 @@ const handleFileChange = async (uploadFile: any) => {
     }));
   } catch (e: any) {
     // ElMessage.error(e.message || "解析失败");
-    handleError(e)
+    handleError(e);
   } finally {
     showPreview.value = true;
   }
 };
+const selected = computed(() => importedRecords.value
+.filter((r) => r.selected)
+.map((r) => r.record));
 // 确认导入
 const confirmImport = async () => {
   if (importing.value) return;
-  const selected = importedRecords.value
-    .filter((r) => r.selected)
-    .map((r) => r.record);
-  if (selected.length === 0) {
+  if (selected.value.length === 0) {
     ElMessage.warning("请至少选择一条记录");
     return;
   }
@@ -309,11 +323,11 @@ const confirmImport = async () => {
   importing.value = true;
   try {
     // 调用后端批量导入接口
-    const res = await recordsApi.importRecords(selected);
+    const res = await recordsApi.importRecords(selected.value);
     if (res.code === 10000) {
       const { successCount, failCount } = res.data || {};
       ElMessage.success(
-        `导入完成：成功 ${successCount ?? selected.length} 条${failCount ? "，失败 " + failCount + " 条" : ""}`,
+        `导入完成：成功 ${successCount ?? selected.value.length} 条${failCount ? "，失败 " + failCount + " 条" : ""}`,
       );
       showPreview.value = false;
       importedRecords.value = [];
@@ -321,11 +335,11 @@ const confirmImport = async () => {
       await recordsStore.fetchFromServer();
     } else {
       // ElMessage.error(res.message || "导入失败");
-      handleError(res)
+      handleError(res);
     }
   } catch (e: any) {
     // ElMessage.error(e.message || "导入失败");
-    handleError(e)
+    handleError(e);
   } finally {
     importing.value = false;
   }
@@ -340,7 +354,7 @@ const cancelPreview = () => {
  */
 const timeRange = ref<"week" | "month" | "year" | "all" | "custom">("week");
 const customRange = ref<string[]>(["2026-01-01", dayjs().format("YYYY-MM-DD")]);
-const exportLoading = ref(false)
+const exportLoading = ref(false);
 
 let startDate: string | undefined;
 let endDate: string | undefined;
@@ -382,30 +396,30 @@ const getExportRecords = async () => {
       return records.data || [];
     }
     // ElMessage.error(records.message || "导出失败");
-    handleError(records)
+    handleError(records);
     return [];
   } catch (e: any) {
     // ElMessage.error(e.message || "导出失败");
-    handleError(e)
+    handleError(e);
     return [];
   }
 };
 const handleExport = async (type: "xlsx" | "json" | "csv") => {
   // 防止重复点击
-  if (exportLoading.value) return
-  exportLoading.value = true
+  if (exportLoading.value) return;
+  exportLoading.value = true;
   const records = await getExportRecords();
   if (!records.length) {
-    ElMessage.warning('所选范围无记录');
-    exportLoading.value = false
+    ElMessage.warning("所选范围无记录");
+    exportLoading.value = false;
     return;
   }
-  const fileName = `前端账单导出${startDate?startDate : '全'}-${endDate?endDate : '部'}`;
-  if (type === 'xlsx') exportExcel(records, fileName);
-  else if (type === 'json') exportJson(records, fileName);
-  else if (type === 'csv') exportCsv(records, fileName);
+  const fileName = `前端账单导出${startDate ? startDate : "全"}-${endDate ? endDate : "部"}`;
+  if (type === "xlsx") exportExcel(records, fileName);
+  else if (type === "json") exportJson(records, fileName);
+  else if (type === "csv") exportCsv(records, fileName);
   ElMessage.success(`已导出 ${records.length} 条记录到 ${fileName}`);
-  exportLoading.value = false
+  exportLoading.value = false;
 };
 const handleExportFromBackend = async () => {
   const now = dayjs();
@@ -440,20 +454,22 @@ const handleExportFromBackend = async () => {
       break;
   }
   try {
-    const res = await recordsApi.downloadBackendXlsx({ startDate, endDate })
-    const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const res = await recordsApi.downloadBackendXlsx({ startDate, endDate });
+    const blob = new Blob([res.data], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `后端账单导出${startDate ? startDate : '全'}-${endDate ? endDate : '部'}.xlsx`;
+    a.download = `后端账单导出${startDate ? startDate : "全"}-${endDate ? endDate : "部"}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
-    ElMessage.success('导出成功');
+    ElMessage.success("导出成功");
   } catch (e: any) {
     // ElMessage.error('导出失败');
-    handleError(e)
+    handleError(e);
   }
-}
+};
 
 /** 以下为分类相关代码
  */
@@ -557,7 +573,7 @@ const deleteCategory = async (id: number) => {
       await categoryStore.loadCategories();
     } catch (error: any) {
       // ElMessage.error(error?.message || "删除失败");
-      handleError(error)
+      handleError(error);
     }
   });
 };

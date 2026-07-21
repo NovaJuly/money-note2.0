@@ -878,6 +878,7 @@ const backToToday = () => {
 .record-groups {
   padding: 0 16px;
   border: 1px solid #000000;
+  overflow-y: auto;
 }
 
 .month-divider {
