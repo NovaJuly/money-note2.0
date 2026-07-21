@@ -16,20 +16,20 @@ interface ApiResponse<T> {
 
 // 获取所有分类（可按类型过滤）
 export const fetchCategories = (type?: 'expense' | 'income') => {
-  return http.get<ApiResponse<CategoryItem[]>>('/setting/categories', { params: { type } })
+  return http.get<ApiResponse<CategoryItem[]>>('/categories', { params: { type } })
 }
 
 // 创建分类
 export const createCategory = (data: { name: string; icon: string; type: 'expense' | 'income' }) => {
-  return http.post<ApiResponse<CategoryItem>>('/setting/categories', data)
+  return http.post<ApiResponse<CategoryItem>>('/categories', data)
 }
 
 // 更新分类
 export const updateCategory = (id: number, data: { name?: string; icon?: string }) => {
-  return http.put<ApiResponse<CategoryItem>>(`/setting/categories/${id}`, data)
+  return http.put<ApiResponse<CategoryItem>>(`/categories/${id}`, data)
 }
 
 // 删除分类
 export const deleteCategory = (id: number) => {
-  return http.delete<ApiResponse<void>>(`/setting/categories/${id}`)
+  return http.delete<ApiResponse<void>>(`/categories/${id}`)
 }

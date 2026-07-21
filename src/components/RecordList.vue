@@ -338,7 +338,7 @@ onUnmounted(() => {
 });
 
 // --- 分页加载与数据分组逻辑 ---
-const PAGE_SIZE = 10; // 每次加载的天数
+const PAGE_SIZE = 20; // 每次加载的天数
 const visibleDays = ref(PAGE_SIZE);
 const loading = ref(false);
 
