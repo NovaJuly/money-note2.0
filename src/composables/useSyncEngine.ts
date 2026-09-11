@@ -1,4 +1,5 @@
 import { watch, onMounted, onUnmounted } from "vue";
+import axios from "axios";
 import { isBackendOnline } from "./useServerStatus";
 import { useRecordsStore } from "@/stores/records";
 import * as recordsApi from "@/api/record";
@@ -21,13 +22,16 @@ export function useSyncEngine() {
         return;
       }
 
+      let failed = 0;
+
       for (const action of queue) {
+        let ok = false;
         try {
           switch (action.type) {
             case "create": {
               // 注意：payload 是原始 record 对象，不包含 id
               const res = await recordsApi.createRecord(action.payload);
-              if (res.code === 10000 && action.tempId) {
+              if (res?.code === 10000 && action.tempId) {
                 // 替换临时 ID，标记已同步
                 const records = recordsStore.records;
                 const idx = records.findIndex((r) => r.id === action.tempId);
@@ -39,39 +43,67 @@ export function useSyncEngine() {
                     await recordsStore.persistRecords();
                   }
                 }
+                ok = true;
               } else {
-                // 业务错误，跳过并记录日志
-                console.warn("同步创建失败", res.message);
+                // 业务失败：保留在队列里等待重试，绝不能丢弃
+                console.warn("同步创建失败", res?.message);
               }
               break;
             }
             case "update": {
-              await recordsApi.updateRecord(
+              // 兼容历史上写入队列的 safeChanges 字段名
+              const changes =
+                action.payload.changes ?? action.payload.safeChanges;
+              const res = await recordsApi.updateRecord(
                 action.payload.id,
-                action.payload.changes,
+                changes,
               );
-              // 更新成功，标记本地记录为已同步
-              const record = recordsStore.records.find(
-                (r) => r.id === action.payload.id,
-              );
-              if (record) {
-                record.synced = true;
-                await recordsStore.persistRecords();
+              if (res?.code === 10000) {
+                // 更新成功，标记本地记录为已同步
+                const record = recordsStore.records.find(
+                  (r) => r.id === action.payload.id,
+                );
+                if (record) {
+                  record.synced = true;
+                  await recordsStore.persistRecords();
+                }
+                ok = true;
+              } else {
+                console.warn("同步更新失败", res?.message);
               }
               break;
             }
             case "delete": {
-              await recordsApi.deleteRecord(action.payload.id);
+              const res = await recordsApi.deleteRecord(action.payload.id);
+              if (res?.code === 10000) {
+                ok = true;
+              } else {
+                console.warn("同步删除失败", res?.message);
+              }
               break;
             }
           }
-          // 成功处理后从队列移除
-          await recordsStore.removePendingAction(action.id);
         } catch (err) {
           console.error("同步操作异常", action, err);
-          // 网络错误或其他，退出循环，等待下次同步
-          break;
+          // 网络不可达：队列中其余动作必然也会失败，中断本轮，等下次同步
+          if (axios.isAxiosError(err)) {
+            syncing = false;
+            return;
+          }
+          // 服务器返回的错误：仅跳过当前动作，继续处理其余动作，避免被单条卡死
         }
+
+        if (ok) {
+          // 只有确认成功才从队列移除，失败项保留等待重试
+          await recordsStore.removePendingAction(action.id);
+        } else {
+          failed++;
+        }
+      }
+
+      // 有失败项时明确告知用户，避免静默丢失
+      if (failed > 0) {
+        ElMessage.warning(`${failed} 条记录同步失败，将稍后重试`);
       }
     } finally {
       syncing = false;

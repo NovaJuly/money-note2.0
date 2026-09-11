@@ -104,18 +104,17 @@ export const useRecordsStore = defineStore("records", () => {
         const res = await recordsApi.createRecord(record);
         if (res.code === 10000) {
           const idx = records.value.findIndex((r) => r.id === tempId);
-          if (idx !== -1) {
-            const record = records.value[idx];
-            if (record) {
-              // 替换为服务器ID
-              record.id = String(res.data.id);
-              record.synced = true;
-              await persistRecords();
-            }
+          const target = idx !== -1 ? records.value[idx] : undefined;
+          if (target) {
+            // 替换为服务器ID
+            target.id = String(res.data.id);
+            target.synced = true;
             await persistRecords();
           }
         } else {
           ElMessage.error(res.message || "添加失败");
+          // 业务失败同样要入队：否则这条记录会永远停在本地，且没有任何重试路径
+          await addPendingAction({ type: "create", payload: record, tempId });
         }
       } catch {
         // 网络错误，加入待同步队列
@@ -171,7 +170,16 @@ export const useRecordsStore = defineStore("records", () => {
     const { id: _, synced: ___, ...safeChanges } = changes as any;
     Object.assign(record, safeChanges);
     if (!record.synced) {
-      // 未同步的记录仅更新本地，等 create 同步上去时自然包含最新数据
+      // 未同步记录：队列里那条 create 的 payload 是快照，必须一起更新，
+      // 否则同步上去的仍然是本次编辑之前的旧值
+      const queue = await getPendingActions();
+      const pending = queue.find(
+        (a) => a.type === "create" && a.tempId === id,
+      );
+      if (pending) {
+        pending.payload = { ...pending.payload, ...safeChanges };
+        await saveQueue(queue);
+      }
       await persistRecords();
       return;
     }
@@ -186,13 +194,13 @@ export const useRecordsStore = defineStore("records", () => {
       } catch {
         await addPendingAction({
           type: "update",
-          payload: { id, safeChanges },
+          payload: { id, changes: safeChanges },
         });
       }
     } else {
       await addPendingAction({
         type: "update",
-        payload: { id, safeChanges },
+        payload: { id, changes: safeChanges },
       });
     }
   }
