@@ -31,6 +31,12 @@ export function exportJson(records: BillRecord[], fileName: string) {
   downloadBlob(jsonStr, `${fileName}.json`, 'application/json')
 }
 
+// CSV 单元格转义：内容里的双引号必须翻倍，并统一用引号包裹
+export const escapeCsvCell = (value: unknown): string => {
+  const text = value == null ? "" : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+};
+
 // 导出CSV文件
 export function exportCsv(records: BillRecord[], fileName: string) {
   const headers = ['交易时间', '交易类型', '收支', '金额', '备注']
@@ -41,6 +47,9 @@ export function exportCsv(records: BillRecord[], fileName: string) {
     r.amount,
     r.note||'/',
   ])
-  const csvContent = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n')
-  downloadBlob(csvContent, `${fileName}.csv`, 'text/csv')
+  // 不加 BOM 的话 Excel 会按本地编码打开，中文直接乱码；行尾用 CRLF 兼容 Excel
+  const csvContent =
+    '\uFEFF' +
+    [headers, ...rows].map(row => row.map(escapeCsvCell).join(',')).join('\r\n')
+  downloadBlob(csvContent, `${fileName}.csv`, 'text/csv;charset=utf-8')
 }

@@ -155,7 +155,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref, nextTick, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, nextTick, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useRecordsStore } from "@/stores/records";
 import * as echarts from "echarts";
@@ -255,7 +255,18 @@ onMounted(() => {
     monthOffset.value = 0;
     yearOffset.value = 0;
   }
+  window.addEventListener("resize", handleResize);
   loadCharts();
+});
+
+// resize 监听与图表实例都必须随组件销毁而释放，
+// 否则每次进入报表页都会多留一个监听器 + 一组未销毁的 echarts 实例
+onUnmounted(() => {
+  window.removeEventListener("resize", handleResize);
+  pieChart?.dispose();
+  barChart?.dispose();
+  pieChart = null;
+  barChart = null;
 });
 
 // ----- 计算当前起止日期及对比起止日期 -----
@@ -401,6 +412,8 @@ const loadCharts = () => {
 // 饼图
 const renderPieChart = () => {
   if (!pieChartRef.value) return;
+  // 同一 DOM 上重复 init 会告警并泄漏实例，重建前先销毁
+  pieChart?.dispose();
   pieChart = echarts.init(pieChartRef.value);
   const expenseRecords = currentRecords.value.filter(
     (r) => r.type === "expense",
@@ -435,6 +448,7 @@ const renderPieChart = () => {
 // 柱状图
 const renderBarChart = () => {
   if (!barChartRef.value) return;
+  barChart?.dispose();
   barChart = echarts.init(barChartRef.value);
 
   const curIncome = currentRecords.value
@@ -533,10 +547,10 @@ const handleCustomRangeChange = () => {
   if (customRange.value) loadCharts();
 };
 
-window.addEventListener("resize", () => {
+const handleResize = () => {
   pieChart?.resize();
   barChart?.resize();
-});
+};
 </script>
 
 <style scoped>

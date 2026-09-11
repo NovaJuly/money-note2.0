@@ -116,6 +116,14 @@ export const useCategoriesStore = defineStore('categories', () => {
     }
   }
 
+  // 退出登录时清空，避免残留上一位用户的分类
+  function resetState() {
+    expenseCategories.value = []
+    incomeCategories.value = []
+    loading.value = false
+    loaded.value = false
+  }
+
   function isDefaultCategory(id: number) {
     return DEFAULT_EXPENSE_IDS.includes(id) || DEFAULT_INCOME_IDS.includes(id)
   }
@@ -130,5 +138,6 @@ export const useCategoriesStore = defineStore('categories', () => {
     deleteCategory,
     updateCategory,
     isDefaultCategory,
+    resetState,
   }
 })

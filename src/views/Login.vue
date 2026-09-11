@@ -86,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, watch, onMounted } from "vue";
+import { reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, type FormInstance, type FormRules } from "element-plus";
 import { useUserStore } from "@/stores/user";
@@ -187,11 +187,12 @@ const doLogin = async () => {
       ElMessage.success(result.message);
       // ✨ 登录成功后立即同步账单和分类数据
       try {
+        // 先切换到当前用户的本地存储分桶，否则会把数据写进错误的桶里
+        recordsStore.setTenant(userStore.currentUser?.username ?? "");
         await Promise.all([
           recordsStore.fetchFromServer(),
           categoryStore.loadCategories(),
         ])
-        console.log("登录成功后立即同步账单和分类数据")
       } catch (e) {
         console.warn('首次数据同步失败，稍后可在页面内重试', e)
       }

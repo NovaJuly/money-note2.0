@@ -37,8 +37,18 @@ async function checkHealth() {
 }
 
 function startHeartbeat() {
+  // 已经在跑就不要再起一个：timer 是模块级单变量，
+  // 多个组件各调用一次会互相覆盖引用，导致前一个定时器永远清不掉
+  if (timer !== null) return;
   checkHealth(); // 立即检测
   timer = window.setInterval(checkHealth, 20_000); // 20秒一次
+}
+
+function stopHeartbeat() {
+  if (timer !== null) {
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
 function onBrowserOnline() {
@@ -47,15 +57,24 @@ function onBrowserOnline() {
   // 这里也可以触发离线队列同步
 }
 
+// 记录有多少个组件正在使用心跳
+let refCount = 0;
+
 export function useServerStatus() {
   onMounted(() => {
+    refCount++;
     startHeartbeat();
     window.addEventListener("online", onBrowserOnline);
   });
 
   onUnmounted(() => {
-    if (timer) clearInterval(timer);
+    refCount--;
     window.removeEventListener("online", onBrowserOnline);
+    // 只有最后一个使用者卸载后才真正停掉心跳
+    if (refCount <= 0) {
+      refCount = 0;
+      stopHeartbeat();
+    }
   });
 
   return { isBackendOnline };

@@ -140,6 +140,14 @@ watch(
   { immediate: true },
 );
 
+// 分类列表是异步加载的，往往晚于组件挂载完成。
+// 没有这段的话首屏分类会一直停在占位符，用户必须手动选一次才能提交
+watch(categories, (list) => {
+  if (!form.category && list.length > 0) {
+    form.category = list[0]?.name || "";
+  }
+});
+
 // 金额滚动轮事件
 const editAmountStep = 1;
 const handleEditWheel = (e: WheelEvent) => {

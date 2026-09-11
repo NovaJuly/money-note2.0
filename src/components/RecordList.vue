@@ -101,7 +101,7 @@
                       dayjs(record.date).format("HH:mm:ss")
                     }}</span>
                     <span v-if="record.note" class="record-note-text">
-                      ● {{ record.note }}</span>
+                      ● {{ plainNote(record.note) }}</span>
                   </div>
                 </div>
                 <div class="record-amount-section">
@@ -113,14 +113,14 @@
                     <el-button
                       type="primary"
                       link
-                      @click="handleEdit(record.id)"
+                      @click.stop="handleEdit(record.id)"
                     >
                       <el-icon><Edit /></el-icon>
                     </el-button>
                     <el-button
                       type="danger"
                       link
-                      @click="handleDelete(record.id)"
+                      @click.stop="handleDelete(record.id)"
                     >
                       <el-icon><Delete /></el-icon>
                     </el-button>
@@ -257,20 +257,19 @@ import dayjs from "dayjs";
 import { extractPlainText } from "@/utils/markdown";
 import { Edit, Delete, ArrowDown, Loading } from "@element-plus/icons-vue";
 import RecordEditDialog from "@/components/RecordEditDialog.vue";
-import { useErrorHandler } from "@/composables/useErrorHandler";
 import { useCategoriesStore } from "@/stores/categories";
-
-const { handleError } = useErrorHandler()
 
 const categoryStore = useCategoriesStore();
 const recordsStore = useRecordsStore();
 
 // --- 滚动与粘性头部状态 ---
 const summaryRef = ref<HTMLElement | null>(null);
-const showStickyHeader = ref(false);
 const selectedMonth = ref(dayjs().format("YYYY-MM"));
 const stickyMonthPickerRef = ref();
 const isAutoScrolling = ref(false);
+
+/** 备注支持 Markdown，列表里只展示纯文本摘要 */
+const plainNote = (note: string) => extractPlainText(note);
 // 触发粘性头部的月份选择器
 const triggerStickyMonthPicker = (e: Event) => {
   e.stopPropagation();
@@ -282,13 +281,7 @@ const handleScroll = (e: Event) => {
   const target = e.target as HTMLElement;
   const scrollTop = target.scrollTop;
 
-  // 1. 判断是否显示粘性头部
-  if (summaryRef.value) {
-    const rect = summaryRef.value.getBoundingClientRect();
-    showStickyHeader.value = rect.top <= 50;
-  }
-
-  // 2. 滚动时自动同步当前月份到选择器
+  // 1. 滚动时自动同步当前月份到选择器（粘性头部已由悬浮面板常驻显示，不再单独维护状态）
   if (!isAutoScrolling.value) {
     if (scrollTop < 50) {
       // 滚动回顶部时，重置为最新月份
@@ -434,8 +427,6 @@ const scrollToMonth = async (monthStr: string) => {
   }
 };
 
-const disabled = computed(() => loading.value || noMore.value);
-
 // 分页加载下一页，避免前端一次性把全部记录放进内存
 const loadMore = async () => {
   if (loading.value || noMore.value) return;
@@ -515,10 +506,17 @@ const getDateIncome = (items: BillRecord[]) =>
  */
 const handleDelete = async (id: string) => {
   try {
-    recordsStore.deleteRecord(id);
-  } catch (error) {
-    handleError(error)
+    await ElMessageBox.confirm("确定删除这条记录吗？删除后无法恢复。", "提示", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+  } catch {
+    return; // 用户取消
   }
+
+  // 必须 await：deleteRecord 内部会落盘，不等它结束就提示会让状态与提示不一致
+  await recordsStore.deleteRecord(id);
 };
 
 // --- 编辑功能逻辑 ---
@@ -550,10 +548,11 @@ const handleEdit = (id: string) => {
   editDialogVisible.value = true;
 };
 
-const handleSaveEdit = () => {
+const handleSaveEdit = async () => {
   if (!editingId.value) {
     return;
   }
+  const id = editingId.value;
   const changes = {
     type: editForm.type,
     amount: editForm.amount,
@@ -561,9 +560,18 @@ const handleSaveEdit = () => {
     date: editForm.date,
     note: editForm.note,
   };
-  recordsStore.updateRecord(editingId.value, changes);
+  // 必须 await：不等本地落盘就提示成功，会让提示与实际状态不一致
+  await recordsStore.updateRecord(id, changes);
   editDialogVisible.value = false;
-  ElMessage.success("修改成功");
+
+  // updateRecord 失败时会把修改转入离线队列（本地已落盘），此时据实提示，
+  // 而不是一律宣称"修改成功"
+  const saved = recordsStore.records.find((r) => r.id === id);
+  if (saved && !saved.synced) {
+    ElMessage.warning("已保存到本地，将在网络恢复后同步");
+  } else {
+    ElMessage.success("修改成功");
+  }
 };
 
 /**

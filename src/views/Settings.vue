@@ -100,6 +100,7 @@
             ref="uploadRef"
             :auto-upload="false"
             :on-change="handleFileChange"
+            :on-exceed="handleExceed"
             :limit="1"
             accept=".xlsx,.csv"
             drag
@@ -256,7 +257,7 @@
 <script setup lang="ts">
 import dayjs from "dayjs";
 import { ref, computed, onMounted } from "vue";
-import { ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox, type UploadInstance } from "element-plus";
 import { Plus } from "@element-plus/icons-vue";
 import * as categoriesApi from "@/api/categories";
 import * as recordsApi from "@/api/record";
@@ -287,6 +288,22 @@ const refreshData = async () => {
 const importedRecords = ref<{ record: WechatBill; selected: boolean }[]>([]);
 const showPreview = ref(false);
 const importing = ref(false);
+const uploadRef = ref<UploadInstance>();
+
+/**
+ * 清空已选文件。
+ * 不清空的话文件列表会一直占着 limit=1 的配额，
+ * 导致导入一次之后再也选不了文件，且界面毫无提示。
+ */
+const clearUpload = () => {
+  uploadRef.value?.clearFiles();
+};
+
+// 超出数量限制时给出明确提示，而不是静默失败
+const handleExceed = () => {
+  ElMessage.warning("每次只能选择 1 个文件，请先移除已选文件");
+};
+
 // 处理文件上传
 const handleFileChange = async (uploadFile: any) => {
   const file = uploadFile.raw;
@@ -294,16 +311,20 @@ const handleFileChange = async (uploadFile: any) => {
 
   try {
     const records = await parseWechatBill(file);
-    console.log(records);
     importedRecords.value = records.map((record) => ({
       record,
       selected: true,
     }));
+    showPreview.value = records.length > 0;
+    if (records.length === 0) {
+      ElMessage.warning(
+        "未能从文件中解析出任何记录，请确认是否为微信支付导出的账单",
+      );
+    }
   } catch (e: any) {
-    // ElMessage.error(e.message || "解析失败");
     handleError(e);
-  } finally {
-    showPreview.value = true;
+    importedRecords.value = [];
+    showPreview.value = false;
   }
 };
 const selected = computed(() =>
@@ -328,6 +349,7 @@ const confirmImport = async () => {
       );
       showPreview.value = false;
       importedRecords.value = [];
+      clearUpload();
       // 可选：刷新记录列表
       await recordsStore.fetchFromServer();
     } else {
@@ -345,6 +367,7 @@ const confirmImport = async () => {
 const cancelPreview = () => {
   showPreview.value = false;
   importedRecords.value = [];
+  clearUpload();
 };
 
 /** 导出相关代码,至450行
@@ -478,15 +501,15 @@ const currentType = ref<"expense" | "income">("expense");
 const editId = ref<number | null>(null);
 const form = ref({
   name: "",
-  icon: "MoreFilled",
+  icon: "More",
 });
 // 从 store 获取分类
 const expenseCategories = computed(() => categoryStore.expenseCategories);
 const incomeCategories = computed(() => categoryStore.incomeCategories);
 const loading = ref(false);
-const isDefaultCategory = (id: number) => {
-  return id <= 15;
-};
+// 统一走 store 的判定，避免本地另写一套 id <= 15 的口径。
+// 后端若新增 id 较小的分类，id <= 15 会把它误判成"默认分类不可删除"
+const isDefaultCategory = (id: number) => categoryStore.isDefaultCategory(id);
 // 初始化加载分类
 onMounted(async () => {
   if (!categoryStore.loaded) {
@@ -500,7 +523,7 @@ const addCategory = (type: "expense" | "income") => {
   isEdit.value = false;
   currentType.value = type;
   editId.value = null;
-  form.value = { name: "", icon: "MoreFilled" };
+  form.value = { name: "", icon: "More" };
   dialogVisible.value = true;
 };
 // 编辑分类

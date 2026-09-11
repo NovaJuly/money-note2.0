@@ -1,24 +1,28 @@
 <template>
-  <div class="accounting">
+  <div class="records-page">
     <main class="page-content">
       <div class="page-header">
-        <h2>记一笔</h2>
-        <el-button @click="router.push('/records')">查看明细</el-button>
+        <h2>账单明细</h2>
+        <el-button type="primary" @click="router.push('/accounting')">
+          记一笔
+        </el-button>
       </div>
-      <!-- 记账表单（流水明细已拆分到 /records 明细页） -->
-      <RecordForm />
+      <div class="record-list-wrapper">
+        <RecordList />
+      </div>
     </main>
   </div>
 </template>
+
 <script setup lang="ts">
 import { useRouter } from "vue-router";
-import RecordForm from "@/components/RecordForm.vue";
+import RecordList from "@/components/RecordList.vue";
 
 const router = useRouter();
 </script>
 
 <style scoped>
-.accounting {
+.records-page {
   min-height: 100vh;
   background: #f5f7fa;
   overflow-x: hidden;
@@ -42,5 +46,9 @@ const router = useRouter();
   font-size: 18px;
   font-weight: 600;
   color: #2c3e50;
+}
+.record-list-wrapper {
+  width: 100%;
+  overflow-x: hidden;
 }
 </style>

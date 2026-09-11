@@ -10,10 +10,32 @@ import { ElMessage } from "element-plus";
 import { isBackendOnline } from "@/composables/useServerStatus";
 
 // ---------- 本地存储实例 ----------
-const recordsLocal = localforage.createInstance({ name: "moneyNoteRecords" });
-const pendingActionsLocal = localforage.createInstance({
-  name: "pendingActions",
-});
+// 必须按用户隔离：否则换账号后会读到上一位用户的账单缓存，
+// 并用新账号的 token 把上一位用户的待同步队列推到服务端
+const STORE_PREFIX = "moneyNoteRecords";
+const QUEUE_PREFIX = "pendingActions";
+
+let recordsLocal = localforage.createInstance({ name: STORE_PREFIX });
+let pendingActionsLocal = localforage.createInstance({ name: QUEUE_PREFIX });
+
+let currentTenant = "";
+
+/**
+ * 切换本地存储的归属用户
+ * @param username 当前登录用户名；传空字符串表示未登录
+ */
+function setTenant(username: string) {
+  const tenant = username || "";
+  if (tenant === currentTenant) return;
+  currentTenant = tenant;
+  const suffix = tenant ? `-${tenant}` : "";
+  recordsLocal = localforage.createInstance({
+    name: `${STORE_PREFIX}${suffix}`,
+  });
+  pendingActionsLocal = localforage.createInstance({
+    name: `${QUEUE_PREFIX}${suffix}`,
+  });
+}
 
 // ---------- 类型 ----------
 export interface BillRecord {
@@ -44,9 +66,47 @@ export const useRecordsStore = defineStore("records", () => {
   const hasMore = ref(true);
 
   // ---------- 初始化：从本地 IndexedDB 恢复记录 ----------
-  async function initLocalData() {
-    const cached = await recordsLocal.getItem<BillRecord[]>("records");
+  async function initLocalData(username = "") {
+    setTenant(username);
+
+    let cached = await recordsLocal.getItem<BillRecord[]>("records");
+
+    // 兼容旧版本：数据曾全部放在未分桶的实例里。
+    // 首次切换到分桶存储时，把旧桶里的数据迁移过来，避免用户本地账单"凭空消失"
+    if ((!cached || cached.length === 0) && currentTenant) {
+      const legacyStore = localforage.createInstance({ name: STORE_PREFIX });
+      const legacyRecords = await legacyStore.getItem<BillRecord[]>("records");
+      if (legacyRecords && legacyRecords.length > 0) {
+        await recordsLocal.setItem("records", legacyRecords);
+        cached = legacyRecords;
+
+        const legacyQueue = localforage.createInstance({ name: QUEUE_PREFIX });
+        const legacyActions =
+          await legacyQueue.getItem<PendingAction[]>("queue");
+        if (legacyActions && legacyActions.length > 0) {
+          await pendingActionsLocal.setItem("queue", legacyActions);
+        }
+        // 迁移完成后清掉旧桶，防止下次被另一个账号再次迁移
+        await legacyStore.clear();
+        await legacyQueue.clear();
+      }
+    }
+
     if (cached) records.value = cached;
+  }
+
+  /**
+   * 清空内存中的记录状态（退出登录时调用）
+   * 注意：这里刻意不清 IndexedDB —— 本地缓存已按用户隔离，
+   * 保留它才能在离线状态下继续查看账单
+   */
+  function resetState() {
+    records.value = [];
+    page.value = 0;
+    total.value = 0;
+    hasMore.value = true;
+    loading.value = false;
+    setTenant("");
   }
 
   // ---------- 本地持久化辅助方法 ----------
@@ -231,6 +291,10 @@ export const useRecordsStore = defineStore("records", () => {
       if (res.code !== 10000) return;
 
       const payload = res.data as any;
+
+      // 后端返回 { list, total } 才说明支持分页；
+      // 直接返回数组意味着它一次性给了全量，此时前端传的 page/limit 是没有意义的
+      const isPaged = !Array.isArray(payload) && Array.isArray(payload?.list);
       const serverList = Array.isArray(payload)
         ? payload
         : Array.isArray(payload?.list)
@@ -256,13 +320,12 @@ export const useRecordsStore = defineStore("records", () => {
 
       records.value = uniqueRecords;
       page.value = nextPage;
-      total.value = Number(
-        Array.isArray(payload)
-          ? payload.length
-          : (payload?.total ?? uniqueRecords.length),
-      );
+      // 未分页时本次返回即全量，不能拿结果长度当 total 去推算"是否还有更多"
+      total.value = isPaged
+        ? Number(payload?.total ?? uniqueRecords.length)
+        : uniqueRecords.length;
       pageSize.value = nextLimit;
-      hasMore.value = records.value.length < total.value;
+      hasMore.value = isPaged ? records.value.length < total.value : false;
       await persistRecords();
     } catch (e) {
       console.warn("拉取服务器记录失败", e);
@@ -328,6 +391,8 @@ export const useRecordsStore = defineStore("records", () => {
     deleteRecord,
     updateRecord,
     initLocalData,
+    setTenant,
+    resetState,
     fetchFromServer,
     getPendingActions,
     removePendingAction,
