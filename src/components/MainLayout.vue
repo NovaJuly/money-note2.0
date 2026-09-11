@@ -82,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed ,onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useUserStore } from "@/stores/user";
 import { ElMessageBox } from "element-plus";
@@ -95,28 +95,31 @@ import {
   Setting,
   SwitchButton,
 } from "@element-plus/icons-vue";
-import { isBackendOnline ,useServerStatus} from "@/composables/useServerStatus";
-import {useSyncEngine,useAutoRelogin} from '@/composables/useSyncEngine'
+import {
+  isBackendOnline,
+  useServerStatus,
+} from "@/composables/useServerStatus";
+import { useSyncEngine, useAutoRelogin } from "@/composables/useSyncEngine";
 import { useErrorHandler } from "@/composables/useErrorHandler";
-import { useRecordsStore } from '@/stores/records'
-import { useCategoriesStore } from '@/stores/categories'
-const {sync} = useSyncEngine()
+import { useRecordsStore } from "@/stores/records";
+import { useCategoriesStore } from "@/stores/categories";
+const { sync } = useSyncEngine();
 
-const recordsStore = useRecordsStore()
-const categoriesStore = useCategoriesStore()
+const recordsStore = useRecordsStore();
+const categoriesStore = useCategoriesStore();
 
-useAutoRelogin()
+useAutoRelogin();
 onMounted(async () => {
-  await recordsStore.initLocalData()  // 从 IndexedDB 恢复数据
-  await categoriesStore.loadCategories()  // 从 IndexedDB 恢复分类数据
+  await recordsStore.initLocalData(); // 从 IndexedDB 恢复数据
+  await categoriesStore.loadCategories(); // 从 IndexedDB 恢复分类数据
   if (isBackendOnline.value) {
-    await sync()                        // ① 推送离线队列
-    await recordsStore.fetchFromServer() // ② 拉取全量，覆盖本地
+    await sync(); // ① 推送离线队列
+    await recordsStore.fetchFromServer({ page: 1, limit: 20 }); // ② 分页拉取首屏数据
   }
-})
-useServerStatus()
+});
+useServerStatus();
 
-const { handleError } = useErrorHandler()
+const { handleError } = useErrorHandler();
 
 const route = useRoute();
 const router = useRouter();
@@ -136,8 +139,7 @@ const handleLogout = async () => {
     });
     userStore.logout();
     router.push("/login");
-  } catch (error) {
-  }
+  } catch (error) {}
 };
 </script>
 

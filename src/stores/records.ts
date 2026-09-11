@@ -38,6 +38,10 @@ export const useRecordsStore = defineStore("records", () => {
   // ---------- 状态 ----------
   const records = ref<BillRecord[]>([]);
   const loading = ref(false);
+  const page = ref(0);
+  const total = ref(0);
+  const pageSize = ref(20);
+  const hasMore = ref(true);
 
   // ---------- 初始化：从本地 IndexedDB 恢复记录 ----------
   async function initLocalData() {
@@ -57,7 +61,10 @@ export const useRecordsStore = defineStore("records", () => {
   }
 
   async function saveQueue(queue: PendingAction[]) {
-    await pendingActionsLocal.setItem('queue', queue.map(q => ({ ...toRaw(q) })))
+    await pendingActionsLocal.setItem(
+      "queue",
+      queue.map((q) => ({ ...toRaw(q) })),
+    );
   }
 
   async function addPendingAction(
@@ -79,7 +86,7 @@ export const useRecordsStore = defineStore("records", () => {
   /**
    * 添加记录 (离线优先)
    */
-  async function addRecord(record: Omit<BillRecord, "id" | "synced" >) {
+  async function addRecord(record: Omit<BillRecord, "id" | "synced">) {
     const tempId = nanoid();
     const newRecord: BillRecord = {
       ...record,
@@ -160,7 +167,8 @@ export const useRecordsStore = defineStore("records", () => {
     if (!record) return;
 
     // 乐观更新本地
-    const { id: _, date: __, synced: ___, ...safeChanges } = changes as any;
+    // 只剔除不可变的 id 与内部字段 synced；date 属于可修改字段，必须传递
+    const { id: _, synced: ___, ...safeChanges } = changes as any;
     Object.assign(record, safeChanges);
     if (!record.synced) {
       // 未同步的记录仅更新本地，等 create 同步上去时自然包含最新数据
@@ -190,24 +198,68 @@ export const useRecordsStore = defineStore("records", () => {
   }
 
   /**
-   * 从服务器拉取全量记录并合并（保留未同步的本地记录）
+   * 分页拉取记录，按页追加并保留本地未同步数据
    */
-  async function fetchFromServer() {
+  async function fetchFromServer(
+    options: {
+      page?: number;
+      limit?: number;
+      replace?: boolean;
+    } = {},
+  ) {
+    const nextPage = options.page ?? page.value + 1;
+    const nextLimit = options.limit ?? pageSize.value;
+    const shouldReplace = options.replace ?? nextPage === 1;
+
+    if (loading.value) return;
+    loading.value = true;
+
     try {
-      const res = await recordsApi.fetchRecords();
-      if (res.code === 10000) {
-        const serverRecords: BillRecord[] = res.data.map((r: any) => ({
-          ...r,
-          id: String(r.id),
-          synced: true,
-        }));
-        // 保留本地尚未同步的记录，它们还没上传
-        // const localUnsynced = records.value.filter(r => !r.synced)
-        records.value = serverRecords;
-        await persistRecords();
-      }
+      const res = await recordsApi.fetchRecordsPage({
+        page: nextPage,
+        limit: nextLimit,
+      });
+
+      if (res.code !== 10000) return;
+
+      const payload = res.data as any;
+      const serverList = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.list)
+          ? payload.list
+          : [];
+
+      const serverRecords: BillRecord[] = serverList.map((r: any) => ({
+        ...r,
+        id: String(r.id),
+        synced: true,
+      }));
+
+      const localUnsynced = records.value.filter((r) => !r.synced);
+      const merged = shouldReplace
+        ? serverRecords
+        : [...records.value, ...serverRecords];
+
+      const uniqueRecords = Array.from(
+        new Map(
+          [...localUnsynced, ...merged].map((record) => [record.id, record]),
+        ).values(),
+      ).sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf());
+
+      records.value = uniqueRecords;
+      page.value = nextPage;
+      total.value = Number(
+        Array.isArray(payload)
+          ? payload.length
+          : (payload?.total ?? uniqueRecords.length),
+      );
+      pageSize.value = nextLimit;
+      hasMore.value = records.value.length < total.value;
+      await persistRecords();
     } catch (e) {
       console.warn("拉取服务器记录失败", e);
+    } finally {
+      loading.value = false;
     }
   }
 
@@ -260,6 +312,10 @@ export const useRecordsStore = defineStore("records", () => {
   return {
     records,
     loading,
+    page,
+    total,
+    pageSize,
+    hasMore,
     addRecord,
     deleteRecord,
     updateRecord,
