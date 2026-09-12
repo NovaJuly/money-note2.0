@@ -1,25 +1,30 @@
 // 封装axios请求
 import axios from "axios";
-import { reactive } from "vue";
-import axiosRetry, { exponentialDelay } from "axios-retry";
-import { ref } from "vue";
+import axiosRetry from "axios-retry";
 import type { AxiosResponse, AxiosError } from "axios";
 import { useUserStore } from "@/stores/user";
-import { useErrorHandler } from "@/composables/useErrorHandler";
 
 // 创建axios实例
 const instance = axios.create({
   baseURL: import.meta.env.VITE_BASE_URL || "/api",
-  timeout: 3000,
+  // 3 秒对登录、批量导入这类请求太紧，弱网下会先超时再触发 2 次重试，
+  // 体感是"卡十几秒然后失败"。心跳检测仍单独使用 3 秒超时。
+  timeout: 10000,
   headers: {
     "Content-Type": "application/json",
   },
 });
 // 请求拦截器
 instance.interceptors.request.use((config) => {
-  const raw = localStorage.getItem("user-store"); // 获取 JSON 字符串
-  const data = raw ? JSON.parse(raw) : null;
-  const token = data?.token; // 取出 token 字段
+  // 本地存储可能被手动改过或已损坏，解析失败时不能让所有请求一起挂掉
+  let token: string | undefined;
+  try {
+    const raw = localStorage.getItem("user-store"); // 获取 JSON 字符串
+    const data = raw ? JSON.parse(raw) : null;
+    token = data?.token; // 取出 token 字段
+  } catch {
+    console.warn("读取本地登录态失败，本次请求不携带 token");
+  }
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -42,8 +47,9 @@ instance.interceptors.response.use(
         // 否则直接跳转登录页
         const userStore = useUserStore();
         userStore.logout();
-        // 跳转登录页
-        window.location.href = "/login";
+        // 走路由跳转而不是整页刷新，避免丢失 SPA 状态与提示。
+        // 用动态 import 是为了不与 router 形成循环依赖
+        void import("@/router").then((m) => m.default.push("/login"));
         return Promise.reject(error);
       }
       // 其他错误码，直接抛出

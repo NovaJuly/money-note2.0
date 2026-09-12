@@ -13,9 +13,7 @@
         <el-button type="primary" @click="router.push('/accounting')">
           记一笔
         </el-button>
-        <el-button type="primary" @click="router.push('/accounting')">
-          查看详情
-        </el-button>
+        <el-button @click="router.push('/records')">查看详情</el-button>
         <el-button @click="router.push('/reports')">查看报表</el-button>
       </div>
 
@@ -75,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useUserStore } from "@/stores/user";
 import { useRecordsStore } from "@/stores/records";
@@ -86,7 +84,19 @@ const userStore = useUserStore();
 const router = useRouter();
 const recordsStore = useRecordsStore();
 
-const now = dayjs();
+// 页面长时间挂着时可能跨月，写死在 setup 会导致统计一直按旧月份过滤
+const now = ref(dayjs());
+let clockTimer: number | undefined;
+
+onMounted(() => {
+  clockTimer = window.setInterval(() => {
+    now.value = dayjs();
+  }, 60_000);
+});
+
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer);
+});
 // 每日卡片数据
 const dailyCards = computed(() => {
   const groups = Array.isArray(recordsStore.groupedRecords)
@@ -96,7 +106,7 @@ const dailyCards = computed(() => {
     .filter(([date]) => {
       if (!date) return false;
       const d = dayjs(date);
-      return d.isValid() && d.isSame(now, "month");
+      return d.isValid() && d.isSame(now.value, "month");
     })
     .map(([date, records]) => {
       const validRecords = Array.isArray(records) ? records : [];

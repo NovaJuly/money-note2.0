@@ -9,39 +9,65 @@ export interface BillRecord {
   category: string;
   date: string;
   note: string;
-  createdAt: string;
 }
 // 通用业务响应格式
 interface ApiResponse<T> {
-  code: number
-  message: string
-  data: T
+  code: number;
+  message: string;
+  data: T;
 }
-// 获取
+
+export interface PaginationParams {
+  page?: number;
+  limit?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface PaginatedRecords {
+  list: BillRecord[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+// 全量拉取，供导出等完整数据场景使用
 export const fetchRecords = (params?: {
-  startDate?: string
-  endDate?: string
+  startDate?: string;
+  endDate?: string;
 }) => {
-  return http.get<ApiResponse<BillRecord[]>>('/records', { params })
-}
+  return http.get<ApiResponse<BillRecord[]>>("/records", {
+    params,
+  });
+};
+
+// 分页拉取，避免一次性加载全部账单
+export const fetchRecordsPage = (params?: PaginationParams) => {
+  return http.get<ApiResponse<PaginatedRecords>>("/records", {
+    params,
+  });
+};
 // 新增
-export const createRecord = (data: Omit<BillRecord, 'id' | 'createdAt'>) => {
-  return http.post<ApiResponse<BillRecord>>('/records', data)
-}
+export const createRecord = (data: Omit<BillRecord, "id">) => {
+  return http.post<ApiResponse<BillRecord>>("/records", data);
+};
 // 更新
 export const updateRecord = (id: string, data: Partial<BillRecord>) => {
-  return http.put<ApiResponse<BillRecord>>(`/records/${id}`, data)
-}
+  return http.put<ApiResponse<BillRecord>>(`/records/${id}`, data);
+};
 // 删除
 export const deleteRecord = (id: string) => {
-  return http.delete<ApiResponse<void>>(`/records/${id}`)
-}
+  return http.delete<ApiResponse<void>>(`/records/${id}`);
+};
 export const importRecords = (records: WechatBill[]) => {
-  return http.post('/records/import', { records })
-}
-export const downloadBackendXlsx = (params?: { startDate?: string; endDate?: string }) => {
-  return http.get('/records/export/xlsx', {
+  return http.post("/records/import", { records });
+};
+export const downloadBackendXlsx = (params?: {
+  startDate?: string;
+  endDate?: string;
+}) => {
+  return http.get("/records/export/xlsx", {
     params,
-    responseType: 'blob'  // 关键：以二进制方式接收
-  })
-}
+    responseType: "blob", // 关键：以二进制方式接收
+  });
+};

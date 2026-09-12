@@ -9,16 +9,13 @@ export interface LoginResponse {
   code: number
   data: {
     token: string
-    user: {
-      username: string
-      createdAt: string
-    }
+    username: string
   }
   message: string
 }
 // 登录接口
 export const loginApi = (data: LoginRequest) => {
-  return http.post<LoginResponse>('/auth/login', data)
+  return http.post<LoginResponse>('/login', data)
 }
 // 注册请求参数
 export interface RegisterRequest {
@@ -33,5 +30,5 @@ export interface RegisterResponse {
 }
 // 注册接口
 export const registerApi = (data: RegisterRequest) => {
-  return http.post<RegisterResponse>('/auth/register', data)
+  return http.post<RegisterResponse>('/register', data)
 }

@@ -84,7 +84,7 @@
                 v-for="record in records"
                 :key="record.id"
                 class="record-item"
-                @click="openEdit(record)"
+                @click="handleEdit(record.id)"
               >
               
                 <div class="record-icon-wrapper">
@@ -101,7 +101,7 @@
                       dayjs(record.date).format("HH:mm:ss")
                     }}</span>
                     <span v-if="record.note" class="record-note-text">
-                      ● {{ record.note }}</span>
+                      ● {{ plainNote(record.note) }}</span>
                   </div>
                 </div>
                 <div class="record-amount-section">
@@ -113,14 +113,14 @@
                     <el-button
                       type="primary"
                       link
-                      @click="handleEdit(record.id)"
+                      @click.stop="handleEdit(record.id)"
                     >
                       <el-icon><Edit /></el-icon>
                     </el-button>
                     <el-button
                       type="danger"
                       link
-                      @click="handleDelete(record.id)"
+                      @click.stop="handleDelete(record.id)"
                     >
                       <el-icon><Delete /></el-icon>
                     </el-button>
@@ -180,12 +180,12 @@
           </el-select>
         </el-form-item>
 
-        <el-form-item label="日期">
+        <el-form-item label="日期时间">
           <el-date-picker
             v-model="editForm.date"
-            type="date"
-            format="YYYY-MM-DD"
-            value-format="YYYY-MM-DD"
+            type="datetime"
+            format="YYYY-MM-DD HH:mm:ss"
+            value-format="YYYY-MM-DD HH:mm:ss"
             style="width: 100%"
           />
         </el-form-item>
@@ -257,27 +257,19 @@ import dayjs from "dayjs";
 import { extractPlainText } from "@/utils/markdown";
 import { Edit, Delete, ArrowDown, Loading } from "@element-plus/icons-vue";
 import RecordEditDialog from "@/components/RecordEditDialog.vue";
-import { useErrorHandler } from "@/composables/useErrorHandler";
 import { useCategoriesStore } from "@/stores/categories";
-
-const { handleError } = useErrorHandler()
 
 const categoryStore = useCategoriesStore();
 const recordsStore = useRecordsStore();
 
 // --- 滚动与粘性头部状态 ---
 const summaryRef = ref<HTMLElement | null>(null);
-const showStickyHeader = ref(false); // 控制 Teleport 粘性头部的显示
-const selectedMonth = ref(dayjs().format("YYYY-MM")); // 当前选中的月份
-const stickyMonthPickerRef = ref(); // 粘性头部月份选择器引用
-const isAutoScrolling = ref(false); // 标记是否正在执行点击跳转产生的自动滚动，避免滚动监听冲突
-const editDialog = ref(false);
-const editingRecord = ref<BillRecord | null>(null);
-const openEdit = (record: BillRecord) => {
-  console.log("编辑记录", record);
-  editingRecord.value = record;
-  editDialog.value = true;
-};
+const selectedMonth = ref(dayjs().format("YYYY-MM"));
+const stickyMonthPickerRef = ref();
+const isAutoScrolling = ref(false);
+
+/** 备注支持 Markdown，列表里只展示纯文本摘要 */
+const plainNote = (note: string) => extractPlainText(note);
 // 触发粘性头部的月份选择器
 const triggerStickyMonthPicker = (e: Event) => {
   e.stopPropagation();
@@ -289,13 +281,7 @@ const handleScroll = (e: Event) => {
   const target = e.target as HTMLElement;
   const scrollTop = target.scrollTop;
 
-  // 1. 判断是否显示粘性头部
-  if (summaryRef.value) {
-    const rect = summaryRef.value.getBoundingClientRect();
-    showStickyHeader.value = rect.top <= 50;
-  }
-
-  // 2. 滚动时自动同步当前月份到选择器
+  // 1. 滚动时自动同步当前月份到选择器（粘性头部已由悬浮面板常驻显示，不再单独维护状态）
   if (!isAutoScrolling.value) {
     if (scrollTop < 50) {
       // 滚动回顶部时，重置为最新月份
@@ -338,11 +324,10 @@ onUnmounted(() => {
 });
 
 // --- 分页加载与数据分组逻辑 ---
-const PAGE_SIZE = 10; // 每次加载的天数
-const visibleDays = ref(PAGE_SIZE);
+const PAGE_SIZE = 20;
 const loading = ref(false);
 
-// 从 store 获取所有分组后的记录
+// 只保留当前已加载页的分组结果
 const allGroups = computed(() => recordsStore.groupedRecords);
 
 /**
@@ -372,9 +357,9 @@ const selectedMonthStats = computed(() => {
   return monthStatsMap.value[selectedMonth.value] || { income: 0, expense: 0 };
 });
 
-// 实际渲染的记录列表（支持无限滚动分页）
+// 实际渲染的记录列表
 const filteredDisplayRecords = computed(() => {
-  return allGroups.value.slice(0, visibleDays.value);
+  return allGroups.value;
 });
 
 // 判断是否为月份的第一天，用于渲染月份分割线
@@ -385,10 +370,8 @@ const isFirstDayOfMonth = (date: string, index: number) => {
   return dayjs(date).format("YYYY-MM") !== dayjs(prevDate).format("YYYY-MM");
 };
 
-// 是否加载完所有数据
-const noMore = computed(() => {
-  return visibleDays.value >= allGroups.value.length;
-});
+// 是否还有下一页
+const noMore = computed(() => !recordsStore.hasMore);
 
 // 手动切换月份：滚动到指定月份位置
 const handleMonthChange = (val: string) => {
@@ -399,17 +382,23 @@ const handleMonthChange = (val: string) => {
 
 // 平滑滚动到指定月份的逻辑
 const scrollToMonth = async (monthStr: string) => {
-  const targetIndex = allGroups.value.findIndex(
+  let targetIndex = allGroups.value.findIndex(
     ([date]) => dayjs(date).format("YYYY-MM") === monthStr,
   );
 
+  while (targetIndex === -1 && recordsStore.hasMore) {
+    await recordsStore.fetchFromServer({
+      page: recordsStore.page + 1,
+      limit: PAGE_SIZE,
+    });
+    targetIndex = allGroups.value.findIndex(
+      ([date]) => dayjs(date).format("YYYY-MM") === monthStr,
+    );
+  }
+
   if (targetIndex !== -1) {
     isAutoScrolling.value = true;
-    // 如果目标月份尚未加载，则扩大显示范围
-    if (targetIndex >= visibleDays.value) {
-      visibleDays.value = targetIndex + PAGE_SIZE;
-      await nextTick();
-    }
+    await nextTick();
 
     setTimeout(() => {
       const targetEl = document.getElementById(`month-${monthStr}`);
@@ -418,7 +407,7 @@ const scrollToMonth = async (monthStr: string) => {
         if (scrollParent) {
           const rect = targetEl.getBoundingClientRect();
           const parentRect = scrollParent.getBoundingClientRect();
-          const offset = 120; // 偏移量，预留出粘性头部空间
+          const offset = 120;
           const targetScrollTop =
             scrollParent.scrollTop + rect.top - parentRect.top - offset;
 
@@ -427,7 +416,6 @@ const scrollToMonth = async (monthStr: string) => {
             behavior: "smooth",
           });
 
-          // 动画结束后恢复滚动监听
           setTimeout(() => {
             isAutoScrolling.value = false;
           }, 800);
@@ -439,19 +427,19 @@ const scrollToMonth = async (monthStr: string) => {
   }
 };
 
-const disabled = computed(() => loading.value || noMore.value);
+// 分页加载下一页，避免前端一次性把全部记录放进内存
+const loadMore = async () => {
+  if (loading.value || noMore.value) return;
+  loading.value = true;
 
-/**
- * 无限滚动加载更多
- */
-const isScrollDisabled = ref(false);
-const loadMore = () => {
-  if (isScrollDisabled.value || loading.value || noMore.value) return;
-  isScrollDisabled.value = true;
-  setTimeout(() => {
-    visibleDays.value += PAGE_SIZE;
-    isScrollDisabled.value = false;
-  }, 300);
+  try {
+    await recordsStore.fetchFromServer({
+      page: recordsStore.page + 1,
+      limit: PAGE_SIZE,
+    });
+  } finally {
+    loading.value = false;
+  }
 };
 
 // --- 工具函数与格式化 ---
@@ -518,10 +506,17 @@ const getDateIncome = (items: BillRecord[]) =>
  */
 const handleDelete = async (id: string) => {
   try {
-    recordsStore.deleteRecord(id);
-  } catch (error) {
-    handleError(error)
+    await ElMessageBox.confirm("确定删除这条记录吗？删除后无法恢复。", "提示", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+  } catch {
+    return; // 用户取消
   }
+
+  // 必须 await：deleteRecord 内部会落盘，不等它结束就提示会让状态与提示不一致
+  await recordsStore.deleteRecord(id);
 };
 
 // --- 编辑功能逻辑 ---
@@ -553,10 +548,11 @@ const handleEdit = (id: string) => {
   editDialogVisible.value = true;
 };
 
-const handleSaveEdit = () => {
+const handleSaveEdit = async () => {
   if (!editingId.value) {
     return;
   }
+  const id = editingId.value;
   const changes = {
     type: editForm.type,
     amount: editForm.amount,
@@ -564,9 +560,18 @@ const handleSaveEdit = () => {
     date: editForm.date,
     note: editForm.note,
   };
-  recordsStore.updateRecord(editingId.value, changes);
+  // 必须 await：不等本地落盘就提示成功，会让提示与实际状态不一致
+  await recordsStore.updateRecord(id, changes);
   editDialogVisible.value = false;
-  ElMessage.success("修改成功");
+
+  // updateRecord 失败时会把修改转入离线队列（本地已落盘），此时据实提示，
+  // 而不是一律宣称"修改成功"
+  const saved = recordsStore.records.find((r) => r.id === id);
+  if (saved && !saved.synced) {
+    ElMessage.warning("已保存到本地，将在网络恢复后同步");
+  } else {
+    ElMessage.success("修改成功");
+  }
 };
 
 /**

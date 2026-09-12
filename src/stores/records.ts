@@ -10,10 +10,32 @@ import { ElMessage } from "element-plus";
 import { isBackendOnline } from "@/composables/useServerStatus";
 
 // ---------- 本地存储实例 ----------
-const recordsLocal = localforage.createInstance({ name: "moneyNoteRecords" });
-const pendingActionsLocal = localforage.createInstance({
-  name: "pendingActions",
-});
+// 必须按用户隔离：否则换账号后会读到上一位用户的账单缓存，
+// 并用新账号的 token 把上一位用户的待同步队列推到服务端
+const STORE_PREFIX = "moneyNoteRecords";
+const QUEUE_PREFIX = "pendingActions";
+
+let recordsLocal = localforage.createInstance({ name: STORE_PREFIX });
+let pendingActionsLocal = localforage.createInstance({ name: QUEUE_PREFIX });
+
+let currentTenant = "";
+
+/**
+ * 切换本地存储的归属用户
+ * @param username 当前登录用户名；传空字符串表示未登录
+ */
+function setTenant(username: string) {
+  const tenant = username || "";
+  if (tenant === currentTenant) return;
+  currentTenant = tenant;
+  const suffix = tenant ? `-${tenant}` : "";
+  recordsLocal = localforage.createInstance({
+    name: `${STORE_PREFIX}${suffix}`,
+  });
+  pendingActionsLocal = localforage.createInstance({
+    name: `${QUEUE_PREFIX}${suffix}`,
+  });
+}
 
 // ---------- 类型 ----------
 export interface BillRecord {
@@ -23,7 +45,6 @@ export interface BillRecord {
   category: string;
   date: string;
   note: string;
-  createdAt: string;
   synced: boolean; // 是否已与服务器同步
 }
 
@@ -39,11 +60,53 @@ export const useRecordsStore = defineStore("records", () => {
   // ---------- 状态 ----------
   const records = ref<BillRecord[]>([]);
   const loading = ref(false);
+  const page = ref(0);
+  const total = ref(0);
+  const pageSize = ref(20);
+  const hasMore = ref(true);
 
   // ---------- 初始化：从本地 IndexedDB 恢复记录 ----------
-  async function initLocalData() {
-    const cached = await recordsLocal.getItem<BillRecord[]>("records");
+  async function initLocalData(username = "") {
+    setTenant(username);
+
+    let cached = await recordsLocal.getItem<BillRecord[]>("records");
+
+    // 兼容旧版本：数据曾全部放在未分桶的实例里。
+    // 首次切换到分桶存储时，把旧桶里的数据迁移过来，避免用户本地账单"凭空消失"
+    if ((!cached || cached.length === 0) && currentTenant) {
+      const legacyStore = localforage.createInstance({ name: STORE_PREFIX });
+      const legacyRecords = await legacyStore.getItem<BillRecord[]>("records");
+      if (legacyRecords && legacyRecords.length > 0) {
+        await recordsLocal.setItem("records", legacyRecords);
+        cached = legacyRecords;
+
+        const legacyQueue = localforage.createInstance({ name: QUEUE_PREFIX });
+        const legacyActions =
+          await legacyQueue.getItem<PendingAction[]>("queue");
+        if (legacyActions && legacyActions.length > 0) {
+          await pendingActionsLocal.setItem("queue", legacyActions);
+        }
+        // 迁移完成后清掉旧桶，防止下次被另一个账号再次迁移
+        await legacyStore.clear();
+        await legacyQueue.clear();
+      }
+    }
+
     if (cached) records.value = cached;
+  }
+
+  /**
+   * 清空内存中的记录状态（退出登录时调用）
+   * 注意：这里刻意不清 IndexedDB —— 本地缓存已按用户隔离，
+   * 保留它才能在离线状态下继续查看账单
+   */
+  function resetState() {
+    records.value = [];
+    page.value = 0;
+    total.value = 0;
+    hasMore.value = true;
+    loading.value = false;
+    setTenant("");
   }
 
   // ---------- 本地持久化辅助方法 ----------
@@ -58,7 +121,10 @@ export const useRecordsStore = defineStore("records", () => {
   }
 
   async function saveQueue(queue: PendingAction[]) {
-    await pendingActionsLocal.setItem('queue', queue.map(q => ({ ...toRaw(q) })))
+    await pendingActionsLocal.setItem(
+      "queue",
+      queue.map((q) => ({ ...toRaw(q) })),
+    );
   }
 
   async function addPendingAction(
@@ -80,12 +146,11 @@ export const useRecordsStore = defineStore("records", () => {
   /**
    * 添加记录 (离线优先)
    */
-  async function addRecord(record: Omit<BillRecord, "id" | "synced" | "createdAt">) {
+  async function addRecord(record: Omit<BillRecord, "id" | "synced">) {
     const tempId = nanoid();
     const newRecord: BillRecord = {
       ...record,
       id: tempId,
-      createdAt: dayjs().format("YYYY-MM-DD HH:mm:ss"),
       synced: false,
     };
 
@@ -99,18 +164,17 @@ export const useRecordsStore = defineStore("records", () => {
         const res = await recordsApi.createRecord(record);
         if (res.code === 10000) {
           const idx = records.value.findIndex((r) => r.id === tempId);
-          if (idx !== -1) {
-            const record = records.value[idx];
-            if (record) {
-              // 替换为服务器ID
-              record.id = String(res.data.id);
-              record.synced = true;
-              await persistRecords();
-            }
+          const target = idx !== -1 ? records.value[idx] : undefined;
+          if (target) {
+            // 替换为服务器ID
+            target.id = String(res.data.id);
+            target.synced = true;
             await persistRecords();
           }
         } else {
           ElMessage.error(res.message || "添加失败");
+          // 业务失败同样要入队：否则这条记录会永远停在本地，且没有任何重试路径
+          await addPendingAction({ type: "create", payload: record, tempId });
         }
       } catch {
         // 网络错误，加入待同步队列
@@ -162,10 +226,20 @@ export const useRecordsStore = defineStore("records", () => {
     if (!record) return;
 
     // 乐观更新本地
-    const { id: _, date: __, synced: ___, ...safeChanges } = changes as any;
+    // 只剔除不可变的 id 与内部字段 synced；date 属于可修改字段，必须传递
+    const { id: _, synced: ___, ...safeChanges } = changes as any;
     Object.assign(record, safeChanges);
     if (!record.synced) {
-      // 未同步的记录仅更新本地，等 create 同步上去时自然包含最新数据
+      // 未同步记录：队列里那条 create 的 payload 是快照，必须一起更新，
+      // 否则同步上去的仍然是本次编辑之前的旧值
+      const queue = await getPendingActions();
+      const pending = queue.find(
+        (a) => a.type === "create" && a.tempId === id,
+      );
+      if (pending) {
+        pending.payload = { ...pending.payload, ...safeChanges };
+        await saveQueue(queue);
+      }
       await persistRecords();
       return;
     }
@@ -180,44 +254,90 @@ export const useRecordsStore = defineStore("records", () => {
       } catch {
         await addPendingAction({
           type: "update",
-          payload: { id, safeChanges },
+          payload: { id, changes: safeChanges },
         });
       }
     } else {
       await addPendingAction({
         type: "update",
-        payload: { id, safeChanges },
+        payload: { id, changes: safeChanges },
       });
     }
   }
 
   /**
-   * 从服务器拉取全量记录并合并（保留未同步的本地记录）
+   * 分页拉取记录，按页追加并保留本地未同步数据
    */
-  async function fetchFromServer() {
+  async function fetchFromServer(
+    options: {
+      page?: number;
+      limit?: number;
+      replace?: boolean;
+    } = {},
+  ) {
+    const nextPage = options.page ?? page.value + 1;
+    const nextLimit = options.limit ?? pageSize.value;
+    const shouldReplace = options.replace ?? nextPage === 1;
+
+    if (loading.value) return;
+    loading.value = true;
+
     try {
-      const res = await recordsApi.fetchRecords();
-      if (res.code === 10000) {
-        const serverRecords: BillRecord[] = res.data.map((r: any) => ({
-          ...r,
-          id: String(r.id),
-          createdAt: dayjs(r.createAt).valueOf(),
-          synced: true,
-        }));
-        // 保留本地尚未同步的记录，它们还没上传
-        // const localUnsynced = records.value.filter(r => !r.synced)
-        records.value = serverRecords;
-        await persistRecords();
-      }
+      const res = await recordsApi.fetchRecordsPage({
+        page: nextPage,
+        limit: nextLimit,
+      });
+
+      if (res.code !== 10000) return;
+
+      const payload = res.data as any;
+
+      // 后端返回 { list, total } 才说明支持分页；
+      // 直接返回数组意味着它一次性给了全量，此时前端传的 page/limit 是没有意义的
+      const isPaged = !Array.isArray(payload) && Array.isArray(payload?.list);
+      const serverList = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.list)
+          ? payload.list
+          : [];
+
+      const serverRecords: BillRecord[] = serverList.map((r: any) => ({
+        ...r,
+        id: String(r.id),
+        synced: true,
+      }));
+
+      const localUnsynced = records.value.filter((r) => !r.synced);
+      const merged = shouldReplace
+        ? serverRecords
+        : [...records.value, ...serverRecords];
+
+      const uniqueRecords = Array.from(
+        new Map(
+          [...localUnsynced, ...merged].map((record) => [record.id, record]),
+        ).values(),
+      ).sort((a, b) => dayjs(b.date).valueOf() - dayjs(a.date).valueOf());
+
+      records.value = uniqueRecords;
+      page.value = nextPage;
+      // 未分页时本次返回即全量，不能拿结果长度当 total 去推算"是否还有更多"
+      total.value = isPaged
+        ? Number(payload?.total ?? uniqueRecords.length)
+        : uniqueRecords.length;
+      pageSize.value = nextLimit;
+      hasMore.value = isPaged ? records.value.length < total.value : false;
+      await persistRecords();
     } catch (e) {
       console.warn("拉取服务器记录失败", e);
+    } finally {
+      loading.value = false;
     }
   }
 
   // ---------- 计算属性 ----------
   const groupedRecords = computed(() => {
     const groups: Record<string, BillRecord[]> = {};
-    // 按 createdAt 数字时间戳倒序排列
+    // 按 date 数字时间戳倒序排列
     const sorted = [...records.value].sort((a, b) => {
       const timeA =
         typeof a.date === "number" ? a.date : dayjs(a.date).valueOf();
@@ -263,10 +383,16 @@ export const useRecordsStore = defineStore("records", () => {
   return {
     records,
     loading,
+    page,
+    total,
+    pageSize,
+    hasMore,
     addRecord,
     deleteRecord,
     updateRecord,
     initLocalData,
+    setTenant,
+    resetState,
     fetchFromServer,
     getPendingActions,
     removePendingAction,

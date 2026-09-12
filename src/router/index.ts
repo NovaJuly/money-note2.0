@@ -37,6 +37,11 @@ const router = createRouter({
           meta: { requiresAuth: true, title: "记账页" },
         },
         {
+          path: "records",
+          component: () => import("@/views/Records.vue"),
+          meta: { requiresAuth: true, title: "明细页" },
+        },
+        {
           path: "settings",
           component: () => import("@/views/Settings.vue"),
           meta: { requiresAuth: true, title: "设置页" },

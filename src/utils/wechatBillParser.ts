@@ -28,10 +28,38 @@ const COL = {
   PRODUCT: 3,
   DIRECTION: 4,
   AMOUNT: 5,
-  STATUS: 7,
-  TRANSACTION_ID: 8,
   REMARK: 10,
 };
+
+/**
+ * 解码文件内容。
+ * 微信支付导出的 CSV 在部分版本是 GBK/GB18030，一律按 UTF-8 解会得到乱码，
+ * 进而导致表头"交易时间"匹配不上，报"未找到账单明细表头"。
+ */
+function decodeText(buffer: ArrayBuffer): string {
+  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  // 没有替换字符，说明 UTF-8 解对了
+  if (!utf8.includes("�")) return utf8;
+  try {
+    const gbk = new TextDecoder("gbk").decode(buffer);
+    return gbk.includes("�") ? utf8 : gbk;
+  } catch {
+    // 少数环境不支持 gbk 编码，退回 UTF-8
+    return utf8;
+  }
+}
+
+/**
+ * 金额单元格可能带货币符号或千分位，直接 parseFloat 会得到 NaN，
+ * 结果就是这一行被静默跳过、用户毫不知情
+ */
+function parseAmount(value: unknown): number {
+  if (typeof value === "number") return value;
+  const cleaned = String(value ?? "")
+    .replace(/[¥￥$,，\s]/g, "")
+    .trim();
+  return cleaned ? parseFloat(cleaned) : NaN;
+}
 // 根据交易类型推断记账分类
 export const inferCategory = (
   tradeType: string,
@@ -76,15 +104,15 @@ export function parseWechatBill(file: File): Promise<WechatBill[]> {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const data = e.target!.result
+        const data = e.target!.result as ArrayBuffer
         const isCSV = file.name.toLowerCase().endsWith('.csv')
         let workbook: XLSX.WorkBook
         if (isCSV) {
-          // CSV：直接使用 xlsx 读取文本
-          workbook = XLSX.read(data as string, { type: 'string', raw: true })
+          // CSV：解码成文本后交给 xlsx（编码处理见 decodeText）
+          workbook = XLSX.read(decodeText(data), { type: 'string', raw: true })
         } else {
           // Excel：读取二进制数组
-          workbook = XLSX.read(new Uint8Array(data as ArrayBuffer), { type: 'array' })
+          workbook = XLSX.read(new Uint8Array(data), { type: 'array' })
         }
 
         const sheetName = workbook.SheetNames[0]!;
@@ -111,7 +139,7 @@ export function parseWechatBill(file: File): Promise<WechatBill[]> {
           const direction = String(row[COL.DIRECTION] || "").trim();
           if (direction !== "支出" && direction !== "收入") continue;
           // 解析金额，忽略无效金额
-          const amount = parseFloat(row[COL.AMOUNT]);
+          const amount = parseAmount(row[COL.AMOUNT]);
           if (isNaN(amount) || amount <= 0) continue;
 
           const tradeType = String(row[COL.TRADE_TYPE] || "").trim();
@@ -172,11 +200,7 @@ export function parseWechatBill(file: File): Promise<WechatBill[]> {
     reader.onerror = (e) => {
       reject(new Error("文件读取失败"));
     };
-    // 根据文件类型选择读取方式
-    if (file.name.toLowerCase().endsWith('.csv')) {
-      reader.readAsText(file, 'UTF-8')
-    } else {
-      reader.readAsArrayBuffer(file)
-    }
+    // 统一按 ArrayBuffer 读取，这样才能在发现编码不对时换一种编码重新解码
+    reader.readAsArrayBuffer(file)
   });
 }

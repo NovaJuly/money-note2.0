@@ -25,6 +25,10 @@
           <el-icon><Edit /></el-icon>
           <span>记账</span>
         </el-menu-item>
+        <el-menu-item index="/records">
+          <el-icon><Tickets /></el-icon>
+          <span>明细</span>
+        </el-menu-item>
         <el-menu-item index="/reports">
           <el-icon><TrendCharts /></el-icon>
           <span>报表</span>
@@ -82,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed ,onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useUserStore } from "@/stores/user";
 import { ElMessageBox } from "element-plus";
@@ -91,36 +95,40 @@ import {
   Expand,
   DataBoard,
   Edit,
+  Tickets,
   TrendCharts,
   Setting,
   SwitchButton,
 } from "@element-plus/icons-vue";
-import { isBackendOnline ,useServerStatus} from "@/composables/useServerStatus";
-import {useSyncEngine,useAutoRelogin} from '@/composables/useSyncEngine'
-import { useErrorHandler } from "@/composables/useErrorHandler";
-import { useRecordsStore } from '@/stores/records'
-import { useCategoriesStore } from '@/stores/categories'
-const {sync} = useSyncEngine()
+import {
+  isBackendOnline,
+  useServerStatus,
+} from "@/composables/useServerStatus";
+import { useSyncEngine, useAutoRelogin } from "@/composables/useSyncEngine";
+import { useRecordsStore } from "@/stores/records";
+import { useCategoriesStore } from "@/stores/categories";
+const { sync } = useSyncEngine();
 
-const recordsStore = useRecordsStore()
-const categoriesStore = useCategoriesStore()
+const recordsStore = useRecordsStore();
+const categoriesStore = useCategoriesStore();
 
-useAutoRelogin()
+useAutoRelogin();
 onMounted(async () => {
-  await recordsStore.initLocalData()  // 从 IndexedDB 恢复数据
-  await categoriesStore.loadCategories()  // 从 IndexedDB 恢复分类数据
+  await recordsStore.initLocalData(userStore.currentUser?.username ?? ""); // 从 IndexedDB 恢复数据（按用户分桶）
+  await categoriesStore.loadCategories(); // 从 IndexedDB 恢复分类数据
   if (isBackendOnline.value) {
-    await sync()                        // ① 推送离线队列
-    await recordsStore.fetchFromServer() // ② 拉取全量，覆盖本地
+    await sync(); // ① 推送离线队列
+    await recordsStore.fetchFromServer({ page: 1, limit: 20 }); // ② 分页拉取首屏数据
   }
-})
-useServerStatus()
-
-const { handleError } = useErrorHandler()
+});
+useServerStatus();
 
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStore();
+// 必须在任何 onMounted（包括 useSyncEngine 的启动同步）之前确定归属用户，
+// 否则首轮同步会读到错误分桶里的待同步队列
+recordsStore.setTenant(userStore.currentUser?.username ?? "");
 
 const collapsed = ref(false);
 
@@ -135,9 +143,11 @@ const handleLogout = async () => {
       type: "warning",
     });
     userStore.logout();
+    // 清空内存中的账单与分类，避免残留上一位用户的数据
+    recordsStore.resetState();
+    categoriesStore.resetState();
     router.push("/login");
-  } catch (error) {
-  }
+  } catch (error) {}
 };
 </script>
 
